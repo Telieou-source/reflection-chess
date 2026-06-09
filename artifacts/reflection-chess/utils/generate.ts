@@ -156,31 +156,38 @@ function tryGenerate(
       .map((m, i) => ({ m, i }))
       .filter(({ m, i }) => i >= hintsToGive && m.kind === 'mirror-backslash');
 
+    // Try each candidate in turn (not random — the attempt2 index picks sequentially)
     for (let attempt2 = 0; attempt2 < candidates.length; attempt2++) {
-      const { m: pick, i: pickIdx } = candidates[Math.floor(rng() * candidates.length)];
+      const { m: pick, i: pickIdx } = candidates[attempt2];
 
-      // Beam arrives at splitter going pick.arrivalDir
-      // Splitter: continues straight in pick.arrivalDir AND reflects (backslash → reflectBackslash(arrivalDir))
-      // The reflected direction is same as the original backslash mirror, so the path to target is preserved.
-      // Place checkpoint in the straight-through direction (pick.arrivalDir) from the splitter.
+      // Walk in arrivalDir from the splitter, collecting all free cells.
+      // Mark all walked cells as occupied so absorbers can't block the beam path.
       let cr = pick.row, cc = pick.col;
-      let checkRow = -1, checkCol = -1;
+      const walkCells: Array<[number, number]> = [];
       for (let steps = 0; steps < gridSize; steps++) {
         const [nr, nc] = stepInDir(cr, cc, pick.arrivalDir);
         if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) break;
         if (occupied.has(`${nr},${nc}`)) break;
         if (grid[nr][nc].kind !== 'empty') break;
-        checkRow = nr; checkCol = nc;
+        walkCells.push([nr, nc]);
         cr = nr; cc = nc;
         occupied.add(`${cr},${cc}`);
       }
 
-      if (checkRow !== -1) {
-        grid[pick.row][pick.col] = { kind: 'splitter', fixed: true };
-        grid[checkRow][checkCol] = { kind: 'checkpoint', fixed: true };
-        splitterMirrorIndex = pickIdx;
-        break;
-      }
+      if (walkCells.length === 0) continue;
+
+      // Prefer interior cells (not on grid boundary) so the checkpoint is visually approachable.
+      // The beam still hits whichever cell we pick since it travels straight from the splitter.
+      const interior = walkCells.filter(
+        ([rr, cc2]) => rr > 0 && rr < gridSize - 1 && cc2 > 0 && cc2 < gridSize - 1
+      );
+      const pool = interior.length > 0 ? interior : walkCells;
+      const [checkRow, checkCol] = pool[Math.floor(rng() * pool.length)];
+
+      grid[pick.row][pick.col] = { kind: 'splitter', fixed: true };
+      grid[checkRow][checkCol] = { kind: 'checkpoint', fixed: true };
+      splitterMirrorIndex = pickIdx;
+      break;
     }
   }
 
