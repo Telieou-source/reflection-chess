@@ -10,6 +10,7 @@ import React, {
 
 import { LEVELS } from '@/constants/levels';
 import type { GameCell, LevelConfig } from '@/types/game';
+import { generateLevel } from '@/utils/generate';
 import { traceLaser } from '@/utils/laser';
 
 const STORAGE_KEY = '@reflection_chess_progress';
@@ -18,6 +19,7 @@ interface GameState {
   level: LevelConfig;
   grid: GameCell[][];
   hitTargets: Set<string>;
+  hitCheckpoints: Set<string>;
   isSolved: boolean;
   remainingMirrors: number;
   selectedMirrorType: 'slash' | 'backslash';
@@ -26,30 +28,45 @@ interface GameState {
 
 interface GameContextType {
   state: GameState | null;
-  completedLevels: number[];
+  completedLevels: Set<number>;
   loadLevel: (id: number) => void;
   tapCell: (row: number, col: number) => void;
   setMirrorType: (type: 'slash' | 'backslash') => void;
   undo: () => void;
   resetLevel: () => void;
+  getLevel: (id: number) => LevelConfig;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
 
-function computeState(level: LevelConfig, grid: GameCell[][]): {
+export function getLevel(id: number): LevelConfig {
+  const tutorial = LEVELS.find(l => l.id === id);
+  if (tutorial) return tutorial;
+  return generateLevel(id);
+}
+
+function computeSolved(level: LevelConfig, grid: GameCell[][]): {
   hitTargets: Set<string>;
+  hitCheckpoints: Set<string>;
   isSolved: boolean;
 } {
-  const { segments, hitTargets } = traceLaser(grid, level.gridSize);
-  void segments;
+  const { hitTargets, hitCheckpoints } = traceLaser(grid, level.gridSize);
+
   let totalTargets = 0;
+  let totalCheckpoints = 0;
   for (let r = 0; r < level.gridSize; r++) {
     for (let c = 0; c < level.gridSize; c++) {
       if (level.grid[r][c].kind === 'target') totalTargets++;
+      if (level.grid[r][c].kind === 'checkpoint') totalCheckpoints++;
     }
   }
-  const isSolved = hitTargets.size === totalTargets && totalTargets > 0;
-  return { hitTargets, isSolved };
+
+  const isSolved =
+    totalTargets > 0 &&
+    hitTargets.size >= totalTargets &&
+    hitCheckpoints.size >= totalCheckpoints;
+
+  return { hitTargets, hitCheckpoints, isSolved };
 }
 
 function countPlayerMirrors(grid: GameCell[][]): number {
@@ -66,7 +83,7 @@ function countPlayerMirrors(grid: GameCell[][]): number {
 
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState | null>(null);
-  const [completedLevels, setCompletedLevels] = useState<number[]>([]);
+  const [completedLevels, setCompletedLevels] = useState<Set<number>>(new Set());
   const initialized = useRef(false);
 
   useEffect(() => {
@@ -76,25 +93,25 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (raw) {
         try {
           const data = JSON.parse(raw) as number[];
-          setCompletedLevels(data);
+          setCompletedLevels(new Set(data));
         } catch {}
       }
     });
   }, []);
 
-  const saveProgress = useCallback((ids: number[]) => {
-    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(ids));
+  const saveProgress = useCallback((ids: Set<number>) => {
+    AsyncStorage.setItem(STORAGE_KEY, JSON.stringify([...ids]));
   }, []);
 
   const loadLevel = useCallback((id: number) => {
-    const level = LEVELS.find(l => l.id === id);
-    if (!level) return;
+    const level = getLevel(id);
     const grid = level.grid.map(row => row.map(cell => ({ ...cell })));
-    const { hitTargets, isSolved } = computeState(level, grid);
+    const { hitTargets, hitCheckpoints, isSolved } = computeSolved(level, grid);
     setState({
       level,
       grid,
       hitTargets,
+      hitCheckpoints,
       isSolved,
       remainingMirrors: level.playerMirrors,
       selectedMirrorType: 'slash',
@@ -104,10 +121,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const tapCell = useCallback((row: number, col: number) => {
     setState(prev => {
-      if (!prev) return prev;
+      if (!prev || prev.isSolved) return prev;
       const cell = prev.grid[row][col];
       if (cell.fixed) return prev;
-      if (prev.isSolved) return prev;
 
       const newGrid = prev.grid.map(r => r.map(c => ({ ...c })));
       const history = [...prev.history, prev.grid.map(r => r.map(c => ({ ...c })))];
@@ -122,20 +138,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         newGrid[row][col] = { kind: 'empty', fixed: false };
       }
 
-      const { hitTargets, isSolved } = computeState(prev.level, newGrid);
+      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
       const usedMirrors = countPlayerMirrors(newGrid);
       const remaining = prev.level.playerMirrors - usedMirrors;
 
       if (isSolved) {
-        const ids = prev.level.id;
+        const levelId = prev.level.id;
         setCompletedLevels(prev2 => {
-          const next = prev2.includes(ids) ? prev2 : [...prev2, ids];
+          if (prev2.has(levelId)) return prev2;
+          const next = new Set(prev2);
+          next.add(levelId);
           saveProgress(next);
           return next;
         });
       }
 
-      return { ...prev, grid: newGrid, hitTargets, isSolved, remainingMirrors: remaining, history };
+      return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: remaining, history };
     });
   }, [saveProgress]);
 
@@ -148,10 +166,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (!prev || prev.history.length === 0) return prev;
       const history = [...prev.history];
       const grid = history.pop()!;
-      const { hitTargets, isSolved } = computeState(prev.level, grid);
+      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, grid);
       const usedMirrors = countPlayerMirrors(grid);
       const remaining = prev.level.playerMirrors - usedMirrors;
-      return { ...prev, grid, hitTargets, isSolved, remainingMirrors: remaining, history };
+      return { ...prev, grid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: remaining, history };
     });
   }, []);
 
@@ -159,11 +177,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setState(prev => {
       if (!prev) return prev;
       const grid = prev.level.grid.map(row => row.map(cell => ({ ...cell })));
-      const { hitTargets, isSolved } = computeState(prev.level, grid);
+      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, grid);
       return {
         ...prev,
         grid,
         hitTargets,
+        hitCheckpoints,
         isSolved,
         remainingMirrors: prev.level.playerMirrors,
         history: [],
@@ -171,8 +190,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
+  const ctxGetLevel = useCallback((id: number) => getLevel(id), []);
+
   return (
-    <GameContext.Provider value={{ state, completedLevels, loadLevel, tapCell, setMirrorType, undo, resetLevel }}>
+    <GameContext.Provider value={{
+      state, completedLevels, loadLevel, tapCell,
+      setMirrorType, undo, resetLevel, getLevel: ctxGetLevel,
+    }}>
       {children}
     </GameContext.Provider>
   );

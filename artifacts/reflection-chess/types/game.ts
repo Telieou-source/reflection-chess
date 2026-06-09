@@ -6,7 +6,10 @@ export type CellKind =
   | 'target'
   | 'wall'
   | 'mirror-slash'
-  | 'mirror-backslash';
+  | 'mirror-backslash'
+  | 'splitter'      // passes beam + reflects (backslash rule); always fixed
+  | 'checkpoint'    // beam passes through; must be hit for win
+  | 'absorber';     // destroys beam; must route around
 
 export interface GameCell {
   kind: CellKind;
@@ -19,6 +22,12 @@ export interface LaserSegment {
   col: number;
   from: Side;
   to: Side;
+}
+
+export interface LaserResult {
+  segments: LaserSegment[];
+  hitTargets: Set<string>;
+  hitCheckpoints: Set<string>;
 }
 
 export interface LevelConfig {

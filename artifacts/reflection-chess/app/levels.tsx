@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   Platform,
   ScrollView,
@@ -13,14 +13,62 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import colors from '@/constants/colors';
 import { LEVELS } from '@/constants/levels';
+import { getLevel } from '@/context/GameContext';
 import { useGame } from '@/context/GameContext';
 
 const c = colors.light;
+
+const GENERATED_PAGE_SIZE = 10;
+const TOTAL_GENERATED_PAGES = 20; // shows levels 11-210
+const TUTORIAL_COUNT = LEVELS.length;
+
+function LevelCard({
+  id,
+  name,
+  description,
+  completed,
+  locked,
+  onPress,
+}: {
+  id: number;
+  name: string;
+  description: string;
+  completed: boolean;
+  locked: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.card, locked && styles.cardLocked]}
+      onPress={() => !locked && onPress()}
+      activeOpacity={locked ? 1 : 0.72}
+    >
+      <View style={[styles.numBadge, completed && styles.numBadgeDone, locked && styles.numBadgeLocked]}>
+        {completed ? (
+          <Feather name="check" size={15} color="#000" />
+        ) : locked ? (
+          <Feather name="lock" size={13} color={c.mutedForeground} />
+        ) : (
+          <Text style={styles.numText}>{id}</Text>
+        )}
+      </View>
+      <View style={styles.cardInfo}>
+        <Text style={[styles.cardName, locked && styles.textDim]}>{name}</Text>
+        <Text style={[styles.cardDesc, locked && styles.textDim]} numberOfLines={1}>{description}</Text>
+      </View>
+      {!locked && (
+        <Feather name={completed ? 'refresh-cw' : 'chevron-right'} size={16}
+          color={completed ? c.mutedForeground : c.laser} />
+      )}
+    </TouchableOpacity>
+  );
+}
 
 export default function LevelsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { completedLevels, loadLevel } = useGame();
+  const [generatedPage, setGeneratedPage] = useState(0);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -30,7 +78,19 @@ export default function LevelsScreen() {
     router.push({ pathname: '/game', params: { id: String(id) } });
   }
 
-  const difficulties = ['Beginner', 'Beginner', 'Beginner', 'Intermediate', 'Intermediate', 'Intermediate', 'Advanced', 'Advanced', 'Expert', 'Expert'];
+  const generatedLevels = useMemo(() => {
+    const start = TUTORIAL_COUNT + 1 + generatedPage * GENERATED_PAGE_SIZE;
+    return Array.from({ length: GENERATED_PAGE_SIZE }, (_, i) => getLevel(start + i));
+  }, [generatedPage]);
+
+  const firstUnlocked = useMemo(() => {
+    if (completedLevels.size === 0) return 1;
+    for (let i = 1; i <= TUTORIAL_COUNT; i++) {
+      if (!completedLevels.has(i)) return i;
+    }
+    // All tutorials done — all generated levels unlocked
+    return TUTORIAL_COUNT + 1;
+  }, [completedLevels]);
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -39,75 +99,92 @@ export default function LevelsScreen() {
           <Feather name="arrow-left" size={22} color={c.foreground} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Levels</Text>
-        <View style={{ width: 36 }} />
+        <View style={styles.headerBadge}>
+          <Text style={styles.headerBadgeText}>{completedLevels.size} solved</Text>
+        </View>
       </View>
 
       <ScrollView
-        contentContainerStyle={[styles.listContent, { paddingBottom: botPad + 24 }]}
+        contentContainerStyle={[styles.content, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {LEVELS.map((level, idx) => {
-          const done = completedLevels.includes(level.id);
-          const prev = idx === 0 || completedLevels.includes(LEVELS[idx - 1].id);
-          const locked = !prev && !done;
+        {/* Tutorial levels */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Tutorial</Text>
+            <Text style={styles.sectionSub}>10 hand-crafted puzzles</Text>
+          </View>
+          {LEVELS.map((level, idx) => {
+            const completed = completedLevels.has(level.id);
+            const prevDone = idx === 0 || completedLevels.has(LEVELS[idx - 1].id);
+            const locked = !prevDone && !completed;
+            return (
+              <LevelCard
+                key={level.id}
+                id={level.id}
+                name={level.name}
+                description={level.description}
+                completed={completed}
+                locked={locked}
+                onPress={() => handleLevel(level.id)}
+              />
+            );
+          })}
+        </View>
 
-          return (
-            <TouchableOpacity
-              key={level.id}
-              style={[styles.levelCard, locked && styles.levelCardLocked]}
-              onPress={() => !locked && handleLevel(level.id)}
-              activeOpacity={locked ? 1 : 0.75}
-            >
-              <View style={[styles.levelNum, done && styles.levelNumDone, locked && styles.levelNumLocked]}>
-                {done ? (
-                  <Feather name="check" size={18} color={c.background} />
-                ) : locked ? (
-                  <Feather name="lock" size={16} color={c.mutedForeground} />
-                ) : (
-                  <Text style={styles.levelNumText}>{level.id}</Text>
-                )}
-              </View>
+        {/* Generated levels */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Endless</Text>
+              <Text style={styles.sectionSub}>Infinite procedural puzzles</Text>
+            </View>
+            <View style={styles.pageControls}>
+              <TouchableOpacity
+                style={[styles.pageBtn, generatedPage === 0 && styles.pageBtnDisabled]}
+                onPress={() => setGeneratedPage(p => Math.max(0, p - 1))}
+                disabled={generatedPage === 0}
+              >
+                <Feather name="chevron-left" size={18} color={generatedPage === 0 ? c.mutedForeground : c.foreground} />
+              </TouchableOpacity>
+              <Text style={styles.pageNum}>
+                {TUTORIAL_COUNT + 1 + generatedPage * GENERATED_PAGE_SIZE}–
+                {TUTORIAL_COUNT + generatedPage * GENERATED_PAGE_SIZE + GENERATED_PAGE_SIZE}
+              </Text>
+              <TouchableOpacity
+                style={[styles.pageBtn, generatedPage >= TOTAL_GENERATED_PAGES - 1 && styles.pageBtnDisabled]}
+                onPress={() => setGeneratedPage(p => Math.min(TOTAL_GENERATED_PAGES - 1, p + 1))}
+                disabled={generatedPage >= TOTAL_GENERATED_PAGES - 1}
+              >
+                <Feather name="chevron-right" size={18} color={generatedPage >= TOTAL_GENERATED_PAGES - 1 ? c.mutedForeground : c.foreground} />
+              </TouchableOpacity>
+            </View>
+          </View>
 
-              <View style={styles.levelInfo}>
-                <Text style={[styles.levelName, locked && styles.textLocked]}>{level.name}</Text>
-                <Text style={[styles.levelDesc, locked && styles.textLocked]} numberOfLines={1}>
-                  {level.description}
-                </Text>
-                <View style={styles.levelMeta}>
-                  <Text style={[styles.levelDiff, locked && styles.textLocked]}>
-                    {difficulties[idx]}
-                  </Text>
-                  <View style={styles.dot} />
-                  <Text style={[styles.levelDiff, locked && styles.textLocked]}>
-                    {level.gridSize}×{level.gridSize}
-                  </Text>
-                  <View style={styles.dot} />
-                  <Text style={[styles.levelDiff, locked && styles.textLocked]}>
-                    {level.playerMirrors} mirror{level.playerMirrors !== 1 ? 's' : ''}
-                  </Text>
-                </View>
-              </View>
-
-              {!locked && (
-                <Feather
-                  name={done ? 'refresh-cw' : 'play'}
-                  size={18}
-                  color={done ? c.mutedForeground : c.laser}
-                />
-              )}
-            </TouchableOpacity>
-          );
-        })}
+          {generatedLevels.map(level => {
+            const completed = completedLevels.has(level.id);
+            const allTutorialsDone = LEVELS.every(l => completedLevels.has(l.id));
+            const locked = !allTutorialsDone && !completed;
+            return (
+              <LevelCard
+                key={level.id}
+                id={level.id}
+                name={level.name}
+                description={level.description}
+                completed={completed}
+                locked={locked}
+                onPress={() => handleLevel(level.id)}
+              />
+            );
+          })}
+        </View>
       </ScrollView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: c.background,
-  },
+  container: { flex: 1, backgroundColor: c.background },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -117,89 +194,64 @@ const styles = StyleSheet.create({
     borderBottomColor: c.border,
     justifyContent: 'space-between',
   },
-  backBtn: {
-    padding: 6,
+  backBtn: { padding: 6 },
+  headerTitle: { fontSize: 18, fontFamily: 'Inter_600SemiBold', color: c.foreground },
+  headerBadge: {
+    backgroundColor: 'rgba(0,212,255,0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(0,212,255,0.25)',
   },
-  headerTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter_600SemiBold',
-    color: c.foreground,
-  },
-  listContent: {
-    padding: 16,
-    gap: 10,
-  },
-  levelCard: {
-    backgroundColor: c.card,
-    borderRadius: 14,
-    padding: 16,
+  headerBadgeText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: c.laser },
+  content: { padding: 16, gap: 24 },
+  section: { gap: 8 },
+  sectionHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 14,
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+    paddingHorizontal: 4,
+  },
+  sectionTitle: { fontSize: 16, fontFamily: 'Inter_700Bold', color: c.foreground },
+  sectionSub: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, marginTop: 2 },
+  pageControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  pageBtn: {
+    padding: 6,
+    backgroundColor: c.card,
+    borderRadius: 8,
     borderWidth: 1,
     borderColor: c.border,
   },
-  levelCardLocked: {
-    opacity: 0.5,
+  pageBtnDisabled: { opacity: 0.4 },
+  pageNum: { fontSize: 12, fontFamily: 'Inter_500Medium', color: c.mutedForeground, minWidth: 54, textAlign: 'center' },
+  card: {
+    backgroundColor: c.card,
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: c.border,
   },
-  levelNum: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+  cardLocked: { opacity: 0.45 },
+  numBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     backgroundColor: c.muted,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
     borderColor: c.border,
   },
-  levelNumDone: {
-    backgroundColor: c.success,
-    borderColor: c.success,
-  },
-  levelNumLocked: {
-    backgroundColor: c.wall,
-    borderColor: c.border,
-  },
-  levelNumText: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: c.laser,
-  },
-  levelInfo: {
-    flex: 1,
-    gap: 3,
-  },
-  levelName: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
-    color: c.foreground,
-  },
-  levelDesc: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
-    color: c.mutedForeground,
-  },
-  levelMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginTop: 2,
-  },
-  levelDiff: {
-    fontSize: 11,
-    fontFamily: 'Inter_500Medium',
-    color: c.mutedForeground,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  dot: {
-    width: 3,
-    height: 3,
-    borderRadius: 2,
-    backgroundColor: c.mutedForeground,
-    opacity: 0.4,
-  },
-  textLocked: {
-    color: c.mutedForeground,
-  },
+  numBadgeDone: { backgroundColor: c.targetHit, borderColor: c.targetHit },
+  numBadgeLocked: { backgroundColor: c.wall },
+  numText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: c.laser },
+  cardInfo: { flex: 1, gap: 2 },
+  cardName: { fontSize: 14, fontFamily: 'Inter_600SemiBold', color: c.foreground },
+  cardDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground },
+  textDim: { color: c.mutedForeground },
 });

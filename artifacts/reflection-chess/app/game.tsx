@@ -14,7 +14,6 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import Board from '@/components/Board';
 import colors from '@/constants/colors';
-import { LEVELS } from '@/constants/levels';
 import { useGame } from '@/context/GameContext';
 
 const c = colors.light;
@@ -44,12 +43,10 @@ function WinOverlay({ level, onNext, onMenu, onRetry }: {
         <Text style={styles.winTitle}>Beam on Target!</Text>
         <Text style={styles.winSub}>Level {level} complete</Text>
         <View style={styles.winButtons}>
-          {level < LEVELS.length && (
-            <TouchableOpacity style={styles.winPrimaryBtn} onPress={onNext} activeOpacity={0.8}>
-              <Text style={styles.winPrimaryText}>Next Level</Text>
-              <Feather name="chevron-right" size={18} color="#000" />
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity style={styles.winPrimaryBtn} onPress={onNext} activeOpacity={0.8}>
+            <Text style={styles.winPrimaryText}>Next Level</Text>
+            <Feather name="chevron-right" size={18} color="#000" />
+          </TouchableOpacity>
           <View style={styles.winSecondaryRow}>
             <TouchableOpacity style={[styles.winSecBtn, { flex: 1 }]} onPress={onRetry} activeOpacity={0.8}>
               <Feather name="refresh-cw" size={15} color={c.foreground} />
@@ -133,7 +130,7 @@ export default function GameScreen() {
     );
   }
 
-  const { level, grid, hitTargets, isSolved, remainingMirrors, selectedMirrorType } = state;
+  const { level, grid, hitTargets, hitCheckpoints, isSolved, remainingMirrors, selectedMirrorType } = state;
 
   const isLevel1 = level.id === 1;
   const hintCell = isLevel1 && remainingMirrors === level.playerMirrors
@@ -184,6 +181,7 @@ export default function GameScreen() {
           grid={grid}
           gridSize={level.gridSize}
           hitTargets={hitTargets}
+          hitCheckpoints={hitCheckpoints}
           onTapCell={handleTap}
           hintCell={hintCell}
         />
