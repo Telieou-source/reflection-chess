@@ -53,9 +53,18 @@ interface Beam {
 
 export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
   const segments: LaserSegment[] = [];
-  const hitTargets = new Set<string>();
+  const hitTargets     = new Set<string>();
   const hitCheckpoints = new Set<string>();
+
+  // cell+direction visited — prevents infinite loops through the same cell in same direction
   const visited = new Set<string>();
+  // cell-only visited — detects self-crossing (any two beam paths sharing a cell)
+  const cellVisited = new Set<string>();
+
+  let selfCross    = false;
+  let crossPos:    { row: number; col: number } | null = null;
+  let hitForbidden = false;
+  let forbiddenPos: { row: number; col: number } | null = null;
 
   const queue: Beam[] = [];
 
@@ -79,28 +88,48 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
 
     if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) continue;
 
+    // Loop guard (same cell + direction already processed)
     const key = `${row},${col},${dir}`;
     if (visited.has(key)) continue;
     visited.add(key);
+
+    // ── Self-crossing check ─────────────────────────────────────────────────
+    const cellKey = `${row},${col}`;
+    if (cellVisited.has(cellKey)) {
+      if (!selfCross) {
+        selfCross = true;
+        crossPos  = { row, col };
+      }
+      continue; // stop this beam path; don't extend further
+    }
+    cellVisited.add(cellKey);
+    // ────────────────────────────────────────────────────────────────────────
 
     const cell = grid[row][col];
     const from = getEntrySide(dir);
 
     switch (cell.kind) {
-      case 'absorber':
       case 'wall':
-        // Beam is absorbed/blocked — no segment
+        // Silently blocked — no segment, no penalty
+        break;
+
+      case 'absorber':
+        // Forbidden contact — triggers combustion animation + reset
+        if (!hitForbidden) {
+          hitForbidden = true;
+          forbiddenPos = { row, col };
+        }
+        // Still render a short segment up to the absorber so the player can see where the beam died
+        segments.push({ row, col, from, to: getExitSide(dir) });
         break;
 
       case 'target': {
         segments.push({ row, col, from, to: getExitSide(dir) });
         hitTargets.add(`${row},${col}`);
-        // Target absorbs beam — no continuation
         break;
       }
 
       case 'checkpoint': {
-        // Beam passes through checkpoint
         segments.push({ row, col, from, to: getExitSide(dir) });
         hitCheckpoints.add(`${row},${col}`);
         const [nr, nc] = stepInDir(row, col, dir);
@@ -125,12 +154,12 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
       }
 
       case 'splitter': {
-        // Beam continues straight
+        // Straight-through
         segments.push({ row, col, from, to: getExitSide(dir) });
         const [nr1, nc1] = stepInDir(row, col, dir);
         queue.push({ row: nr1, col: nc1, dir });
 
-        // AND also reflects as backslash
+        // And reflected (backslash direction)
         const reflDir = reflectBackslash(dir);
         if (reflDir !== dir) {
           segments.push({ row, col, from, to: getExitSide(reflDir) });
@@ -140,8 +169,61 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
         break;
       }
 
+      case 'fiber-entry': {
+        const fiberId = cell.fiberId;
+        if (fiberId === undefined) {
+          // Orphaned entry (pending placement) — absorb silently
+          break;
+        }
+
+        // Find the paired exit
+        let exitRow = -1;
+        let exitCol = -1;
+        search: for (let r2 = 0; r2 < gridSize; r2++) {
+          for (let c2 = 0; c2 < gridSize; c2++) {
+            const ec = grid[r2][c2];
+            if (ec.kind === 'fiber-exit' && ec.fiberId === fiberId) {
+              exitRow = r2;
+              exitCol = c2;
+              break search;
+            }
+          }
+        }
+
+        if (exitRow === -1) {
+          // No exit found — absorb silently
+          break;
+        }
+
+        // Segment showing beam entering the tunnel
+        segments.push({ row, col, from, to: getExitSide(dir) });
+
+        // Mark exit cell visited so no other beam can cross it
+        const exitCellKey = `${exitRow},${exitCol}`;
+        if (!cellVisited.has(exitCellKey)) {
+          cellVisited.add(exitCellKey);
+          // Segment showing beam emerging at exit (same direction)
+          segments.push({ row: exitRow, col: exitCol, from: getEntrySide(dir), to: getExitSide(dir) });
+        }
+
+        // Continue beam from the cell after the exit in the same direction
+        const [nr, nc] = stepInDir(exitRow, exitCol, dir);
+        queue.push({ row: nr, col: nc, dir });
+        break;
+      }
+
+      case 'fiber-exit':
+        // A beam arriving directly at an exit (not teleported) just passes through
+        // (This can happen if another beam somehow reaches it physically)
+        segments.push({ row, col, from, to: getExitSide(dir) });
+        {
+          const [nr, nc] = stepInDir(row, col, dir);
+          queue.push({ row: nr, col: nc, dir });
+        }
+        break;
+
       default: {
-        // empty cell — beam passes through
+        // empty — beam passes straight through
         segments.push({ row, col, from, to: getExitSide(dir) });
         const [nr, nc] = stepInDir(row, col, dir);
         queue.push({ row: nr, col: nc, dir });
@@ -150,5 +232,13 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
     }
   }
 
-  return { segments, hitTargets, hitCheckpoints };
+  return {
+    segments,
+    hitTargets,
+    hitCheckpoints,
+    selfCross,
+    crossPos,
+    hitForbidden,
+    forbiddenPos,
+  };
 }

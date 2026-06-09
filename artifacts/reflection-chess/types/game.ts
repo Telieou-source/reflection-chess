@@ -7,14 +7,17 @@ export type CellKind =
   | 'wall'
   | 'mirror-slash'
   | 'mirror-backslash'
-  | 'splitter'      // player-placed from inventory; splits beam (backslash + straight-through)
-  | 'checkpoint'    // beam passes through; must be hit for win
-  | 'absorber';     // destroys beam; use bomb item to remove
+  | 'splitter'       // player-placed; splits beam (backslash + straight-through)
+  | 'checkpoint'     // beam passes through; must be hit for win
+  | 'absorber'       // forbidden — beam touching this resets the puzzle
+  | 'fiber-entry'    // underground tunnel entrance; paired with a fiber-exit
+  | 'fiber-exit';    // underground tunnel exit; paired with a fiber-entry
 
 export interface GameCell {
   kind: CellKind;
   direction?: Direction;
   fixed: boolean;
+  fiberId?: number; // links a fiber-entry to its matching fiber-exit
 }
 
 export interface LaserSegment {
@@ -28,6 +31,10 @@ export interface LaserResult {
   segments: LaserSegment[];
   hitTargets: Set<string>;
   hitCheckpoints: Set<string>;
+  selfCross: boolean;
+  crossPos: { row: number; col: number } | null;
+  hitForbidden: boolean;
+  forbiddenPos: { row: number; col: number } | null;
 }
 
 export interface LevelConfig {
@@ -39,11 +46,12 @@ export interface LevelConfig {
   playerMirrors: number;
 }
 
-export type SelectedTool = 'slash' | 'backslash' | 'splitter' | 'bomb';
+export type SelectedTool = 'slash' | 'backslash' | 'splitter' | 'bomb' | 'fiber';
 
 export interface Inventory {
   splitter: number;
   bomb: number;
+  fiber: number;
 }
 
 export interface ShopItem {

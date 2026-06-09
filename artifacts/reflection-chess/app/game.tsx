@@ -98,6 +98,39 @@ function WinOverlay({ level, coinsEarned, onNext, onMenu, onRetry }: {
   );
 }
 
+// ── Short-circuit / Combustion screen banner ────────────────────────────────
+function ResetBanner({ animState }: { animState: 'short-circuit' | 'combustion' }) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const scale   = useRef(new Animated.Value(0.8)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(opacity, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.spring(scale,  { toValue: 1, useNativeDriver: true, tension: 90, friction: 8 }),
+    ]).start();
+  }, [opacity, scale]);
+
+  const isShort = animState === 'short-circuit';
+  const bgColor  = isShort ? 'rgba(0,212,255,0.12)' : 'rgba(255,80,0,0.12)';
+  const border   = isShort ? 'rgba(0,212,255,0.4)' : 'rgba(255,100,0,0.4)';
+  const textColor = isShort ? '#00d4ff' : '#ff6b00';
+  const icon: keyof typeof Feather.glyphMap = isShort ? 'zap' : 'alert-circle';
+  const title = isShort ? '⚡  Short Circuit!' : '💥  Combustion!';
+  const sub   = isShort
+    ? 'The beam crossed itself — puzzle reset'
+    : 'The beam hit a forbidden zone — puzzle reset';
+
+  return (
+    <Animated.View style={[styles.resetBanner, { backgroundColor: bgColor, borderColor: border, opacity, transform: [{ scale }] }]}>
+      <Feather name={icon} size={20} color={textColor} />
+      <View style={{ flex: 1 }}>
+        <Text style={[styles.resetBannerTitle, { color: textColor }]}>{title}</Text>
+        <Text style={styles.resetBannerSub}>{sub}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
 function FirstRunBanner({ onDismiss, onHelp }: { onDismiss: () => void; onHelp: () => void }) {
   const opacity = useRef(new Animated.Value(0)).current;
   useEffect(() => {
@@ -180,9 +213,13 @@ export default function GameScreen() {
 
   const handleTap = useCallback((row: number, col: number) => {
     if (!state) return;
+    // Ignore taps while animation is playing
+    if (state.animState !== 'none') return;
+
     const cell = state.grid[row][col];
     const isBombOnAbsorber = state.selectedTool === 'bomb' && cell.kind === 'absorber';
-    const isInteractive = isBombOnAbsorber ||
+    const isFiberTool = state.selectedTool === 'fiber';
+    const isInteractive = isBombOnAbsorber || isFiberTool ||
       (!cell.fixed && cell.kind !== 'target' && cell.kind !== 'laser' && cell.kind !== 'wall' && cell.kind !== 'checkpoint');
     if (isInteractive) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -208,6 +245,7 @@ export default function GameScreen() {
   const {
     level, grid, hitTargets, hitCheckpoints, isSolved,
     remainingMirrors, selectedTool, coinsJustEarned,
+    animState, fiberPhase, pendingFiberEntry,
   } = state;
 
   const isLevel1 = level.id === 1;
@@ -215,7 +253,21 @@ export default function GameScreen() {
     ? { row: 0, col: 3 }
     : null;
 
-  const hasItems = inventory.splitter > 0 || inventory.bomb > 0;
+  const hasItems = inventory.splitter > 0 || inventory.bomb > 0 || inventory.fiber > 0;
+
+  // Hint text at the bottom
+  let hintText = 'Tap empty to place · Tap mirror to cycle → rotate → remove';
+  if (selectedTool === 'bomb') {
+    hintText = 'Tap an absorber (✕) to destroy it';
+  } else if (selectedTool === 'splitter') {
+    hintText = 'Tap an empty cell to place splitter · Tap placed splitter to retrieve';
+  } else if (selectedTool === 'fiber') {
+    if (fiberPhase === 'placing-exit') {
+      hintText = 'Tap a second cell for the tunnel exit · Tap the entry cell to cancel';
+    } else {
+      hintText = 'Tap two cells to create an underground tunnel · Tap a placed tunnel to remove it';
+    }
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPad, paddingBottom: botPad }]}>
@@ -250,6 +302,30 @@ export default function GameScreen() {
         />
       )}
 
+      {/* Short-circuit / Combustion banner */}
+      {animState !== 'none' && (
+        <ResetBanner animState={animState} />
+      )}
+
+      {/* Fiber placement phase indicator */}
+      {selectedTool === 'fiber' && fiberPhase === 'placing-exit' && animState === 'none' && (
+        <View style={styles.fiberPhaseBanner}>
+          <View style={styles.fiberPhaseStep}>
+            <View style={[styles.fiberPhaseCircle, styles.fiberPhaseCircleDone]}>
+              <Feather name="check" size={11} color="#000" />
+            </View>
+            <Text style={styles.fiberPhaseText}>Entry placed</Text>
+          </View>
+          <View style={styles.fiberPhaseDivider} />
+          <View style={styles.fiberPhaseStep}>
+            <View style={[styles.fiberPhaseCircle, styles.fiberPhaseCircleActive]}>
+              <Text style={styles.fiberPhaseCircleText}>2</Text>
+            </View>
+            <Text style={[styles.fiberPhaseText, { color: '#f97316' }]}>Tap exit cell</Text>
+          </View>
+        </View>
+      )}
+
       <View style={styles.boardArea}>
         {hintCell && (
           <View style={styles.hintLabel}>
@@ -264,6 +340,7 @@ export default function GameScreen() {
           hitCheckpoints={hitCheckpoints}
           onTapCell={handleTap}
           hintCell={hintCell}
+          pendingFiberEntry={pendingFiberEntry}
         />
         {level.gridSize <= 5 && (
           <View style={styles.legend}>
@@ -333,22 +410,39 @@ export default function GameScreen() {
             icon={<Text style={{ fontSize: 18 }}>💥</Text>}
             onPress={() => setTool('bomb')}
           />
+          <ToolBtn
+            label="〇"
+            subLabel="Fiber"
+            active={selectedTool === 'fiber'}
+            count={inventory.fiber}
+            disabled={inventory.fiber === 0 && fiberPhase === 'idle'}
+            icon={
+              <View style={{
+                width: 22, height: 22,
+                borderRadius: 11,
+                borderWidth: 2.5,
+                borderColor: selectedTool === 'fiber' ? '#f97316' : c.mutedForeground,
+                alignItems: 'center', justifyContent: 'center',
+              }}>
+                <View style={{
+                  width: 8, height: 8,
+                  borderRadius: 4,
+                  backgroundColor: selectedTool === 'fiber' ? '#f97316' : c.mutedForeground,
+                }} />
+              </View>
+            }
+            onPress={() => setTool('fiber')}
+          />
         </ScrollView>
 
         {!hasItems && (
           <TouchableOpacity onPress={() => router.push('/shop')} style={styles.shopTeaser}>
             <Feather name="shopping-bag" size={12} color={c.laser} />
-            <Text style={styles.shopTeaserText}>Visit the Shop to unlock Splitters & Bombs</Text>
+            <Text style={styles.shopTeaserText}>Visit the Shop to unlock Splitters, Bombs & Fiber Tunnels</Text>
           </TouchableOpacity>
         )}
 
-        <Text style={styles.hint}>
-          {selectedTool === 'bomb'
-            ? 'Tap an absorber (✕) to destroy it'
-            : selectedTool === 'splitter'
-              ? 'Tap an empty cell to place splitter · Tap placed splitter to retrieve'
-              : 'Tap empty to place · Tap mirror to cycle → rotate → remove'}
-        </Text>
+        <Text style={styles.hint}>{hintText}</Text>
       </View>
 
       {isSolved && (
@@ -401,6 +495,51 @@ const styles = StyleSheet.create({
   bannerBtn: { paddingVertical: 4 },
   bannerBtnText: { fontSize: 13, fontFamily: 'Inter_600SemiBold', color: c.laser },
   bannerClose: { padding: 4 },
+  // Reset banner (short-circuit / combustion)
+  resetBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginHorizontal: 14,
+    marginTop: 6,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  resetBannerTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter_700Bold',
+    lineHeight: 18,
+  },
+  resetBannerSub: {
+    fontSize: 11,
+    fontFamily: 'Inter_400Regular',
+    color: c.mutedForeground,
+    lineHeight: 15,
+  },
+  // Fiber phase indicator
+  fiberPhaseBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    paddingVertical: 7,
+    paddingHorizontal: 20,
+    backgroundColor: 'rgba(249,115,22,0.06)',
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(249,115,22,0.2)',
+  },
+  fiberPhaseStep: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  fiberPhaseCircle: {
+    width: 20, height: 20, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  fiberPhaseCircleDone: { backgroundColor: '#2ed573' },
+  fiberPhaseCircleActive: { backgroundColor: '#f97316' },
+  fiberPhaseCircleText: { fontSize: 11, fontFamily: 'Inter_700Bold', color: '#fff' },
+  fiberPhaseDivider: { width: 24, height: 1.5, backgroundColor: 'rgba(249,115,22,0.3)' },
+  fiberPhaseText: { fontSize: 12, fontFamily: 'Inter_500Medium', color: c.mutedForeground },
   boardArea: {
     flex: 1,
     alignItems: 'center',

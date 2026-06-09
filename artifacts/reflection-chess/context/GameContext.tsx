@@ -17,6 +17,8 @@ const STORAGE_KEY_PROGRESS  = '@reflection_chess_progress';
 const STORAGE_KEY_COINS     = '@reflection_chess_coins';
 const STORAGE_KEY_INVENTORY = '@reflection_chess_inventory';
 
+type AnimState = 'none' | 'short-circuit' | 'combustion';
+
 interface GameState {
   level: LevelConfig;
   grid: GameCell[][];
@@ -27,6 +29,13 @@ interface GameState {
   selectedTool: SelectedTool;
   history: GameCell[][][];
   coinsJustEarned: number | null;
+  // Animation
+  animState: AnimState;
+  animPos: { row: number; col: number } | null;
+  // Fiber two-phase placement
+  fiberPhase: 'idle' | 'placing-exit';
+  pendingFiberEntry: { row: number; col: number } | null;
+  nextFiberId: number;
 }
 
 interface GameContextType {
@@ -51,12 +60,24 @@ export function getLevel(id: number): LevelConfig {
   return generateLevel(id);
 }
 
-function computeSolved(level: LevelConfig, grid: GameCell[][]): {
+interface SolvedResult {
   hitTargets: Set<string>;
   hitCheckpoints: Set<string>;
   isSolved: boolean;
-} {
-  const { hitTargets, hitCheckpoints } = traceLaser(grid, level.gridSize);
+  selfCross: boolean;
+  crossPos: { row: number; col: number } | null;
+  hitForbidden: boolean;
+  forbiddenPos: { row: number; col: number } | null;
+}
+
+function computeSolved(level: LevelConfig, grid: GameCell[][]): SolvedResult {
+  const result = traceLaser(grid, level.gridSize);
+  const { hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos } = result;
+
+  // If the beam hit a forbidden object or crossed itself, the puzzle is failed (not solved)
+  if (selfCross || hitForbidden) {
+    return { hitTargets, hitCheckpoints, isSolved: false, selfCross, crossPos, hitForbidden, forbiddenPos };
+  }
 
   let totalTargets = 0;
   let totalCheckpoints = 0;
@@ -72,7 +93,7 @@ function computeSolved(level: LevelConfig, grid: GameCell[][]): {
     hitTargets.size >= totalTargets &&
     hitCheckpoints.size >= totalCheckpoints;
 
-  return { hitTargets, hitCheckpoints, isSolved };
+  return { hitTargets, hitCheckpoints, isSolved, selfCross: false, crossPos: null, hitForbidden: false, forbiddenPos: null };
 }
 
 function countPlayerMirrors(grid: GameCell[][]): number {
@@ -92,20 +113,33 @@ function computeCoinsEarned(par: number, mirrorsUsed: number): number {
   return Math.max(1, underPar + 1);
 }
 
+function cloneGrid(grid: GameCell[][]): GameCell[][] {
+  return grid.map(row => row.map(cell => ({ ...cell })));
+}
+
 export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState | null>(null);
   const [completedLevels, setCompletedLevels] = useState<Set<number>>(new Set());
   const [coins, setCoins] = useState(0);
-  const [inventory, setInventory] = useState<Inventory>({ splitter: 0, bomb: 0 });
+  const [inventory, setInventory] = useState<Inventory>({ splitter: 0, bomb: 0, fiber: 0 });
   const initialized = useRef(false);
 
-  // Keep a ref to inventory so tapCell can read it synchronously
   const inventoryRef = useRef(inventory);
   useEffect(() => { inventoryRef.current = inventory; }, [inventory]);
 
   const coinsRef = useRef(coins);
   useEffect(() => { coinsRef.current = coins; }, [coins]);
 
+  // ── Persist helpers ────────────────────────────────────────────────────────
+  const saveInventory = useCallback((inv: Inventory) => {
+    AsyncStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(inv));
+  }, []);
+
+  const saveCoins = useCallback((amount: number) => {
+    AsyncStorage.setItem(STORAGE_KEY_COINS, String(amount));
+  }, []);
+
+  // ── Load persisted state ───────────────────────────────────────────────────
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -125,20 +159,79 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (rawInventory) {
         try {
           const inv = JSON.parse(rawInventory) as Partial<Inventory>;
-          setInventory({ splitter: inv.splitter ?? 0, bomb: inv.bomb ?? 0 });
+          setInventory({ splitter: inv.splitter ?? 0, bomb: inv.bomb ?? 0, fiber: inv.fiber ?? 0 });
         } catch {}
       }
     });
   }, []);
 
-  const saveInventory = useCallback((inv: Inventory) => {
-    AsyncStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(inv));
+  // ── Auto-reset after animation ─────────────────────────────────────────────
+  const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const resetLevel = useCallback(() => {
+    if (animTimerRef.current) {
+      clearTimeout(animTimerRef.current);
+      animTimerRef.current = null;
+    }
+    setState(prev => {
+      if (!prev) return prev;
+      const grid = cloneGrid(prev.level.grid);
+      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, grid);
+      return {
+        ...prev,
+        grid,
+        hitTargets,
+        hitCheckpoints,
+        isSolved,
+        remainingMirrors: prev.level.playerMirrors,
+        history: [],
+        coinsJustEarned: null,
+        animState: 'none',
+        animPos: null,
+        fiberPhase: 'idle',
+        pendingFiberEntry: null,
+      };
+    });
   }, []);
 
-  const saveCoins = useCallback((amount: number) => {
-    AsyncStorage.setItem(STORAGE_KEY_COINS, String(amount));
+  useEffect(() => {
+    if (!state || state.animState === 'none') return;
+
+    if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    animTimerRef.current = setTimeout(() => {
+      resetLevel();
+    }, 1600);
+
+    return () => {
+      if (animTimerRef.current) clearTimeout(animTimerRef.current);
+    };
+  }, [state?.animState, resetLevel]);
+
+  // ── loadLevel ──────────────────────────────────────────────────────────────
+  const loadLevel = useCallback((id: number) => {
+    if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; }
+    const level = getLevel(id);
+    const grid = cloneGrid(level.grid);
+    const { hitTargets, hitCheckpoints, isSolved } = computeSolved(level, grid);
+    setState({
+      level,
+      grid,
+      hitTargets,
+      hitCheckpoints,
+      isSolved,
+      remainingMirrors: level.playerMirrors,
+      selectedTool: 'slash',
+      history: [],
+      coinsJustEarned: null,
+      animState: 'none',
+      animPos: null,
+      fiberPhase: 'idle',
+      pendingFiberEntry: null,
+      nextFiberId: 0,
+    });
   }, []);
 
+  // ── purchaseItem ───────────────────────────────────────────────────────────
   const purchaseItem = useCallback((id: keyof Inventory, cost: number): boolean => {
     const currentCoins = coinsRef.current;
     if (currentCoins < cost) return false;
@@ -153,37 +246,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [saveCoins, saveInventory]);
 
-  const loadLevel = useCallback((id: number) => {
-    const level = getLevel(id);
-    const grid = level.grid.map(row => row.map(cell => ({ ...cell })));
-    const { hitTargets, hitCheckpoints, isSolved } = computeSolved(level, grid);
-    setState({
-      level,
-      grid,
-      hitTargets,
-      hitCheckpoints,
-      isSolved,
-      remainingMirrors: level.playerMirrors,
-      selectedTool: 'slash',
-      history: [],
-      coinsJustEarned: null,
-    });
-  }, []);
-
+  // ── tapCell ────────────────────────────────────────────────────────────────
   const tapCell = useCallback((row: number, col: number) => {
     setState(prev => {
       if (!prev || prev.isSolved) return prev;
+      // Block taps while animation is playing
+      if (prev.animState !== 'none') return prev;
 
       const cell = prev.grid[row][col];
 
-      // ── Bomb: destroy absorber ───────────────────────────────────────────
+      // ── Bomb: destroy an absorber ──────────────────────────────────────────
       if (prev.selectedTool === 'bomb' && cell.kind === 'absorber' && cell.fixed) {
         const inv = inventoryRef.current;
         if (inv.bomb <= 0) return prev;
         const newInv = { ...inv, bomb: inv.bomb - 1 };
         setInventory(newInv);
         saveInventory(newInv);
-        const newGrid = prev.grid.map(r => r.map(c => ({ ...c })));
+        const newGrid = cloneGrid(prev.grid);
         newGrid[row][col] = { kind: 'empty', fixed: false };
         const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
         const usedMirrors = countPlayerMirrors(newGrid);
@@ -194,39 +273,202 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           hitCheckpoints,
           isSolved,
           remainingMirrors: prev.level.playerMirrors - usedMirrors,
-          // No history push — bomb use is not undoable
         };
       }
 
-      // ── Splitter: remove player-placed splitter (return to inventory) ────
+      // ── Fiber tool ─────────────────────────────────────────────────────────
+      if (prev.selectedTool === 'fiber') {
+        // Remove an existing fiber pair by tapping either end
+        if (
+          prev.fiberPhase === 'idle' &&
+          (cell.kind === 'fiber-entry' || cell.kind === 'fiber-exit') &&
+          !cell.fixed
+        ) {
+          const fiberId = cell.fiberId;
+          const newGrid = cloneGrid(prev.grid);
+          newGrid[row][col] = { kind: 'empty', fixed: false };
+          if (fiberId !== undefined) {
+            // Remove the paired cell too
+            for (let r = 0; r < prev.level.gridSize; r++) {
+              for (let c = 0; c < prev.level.gridSize; c++) {
+                const pc = newGrid[r][c];
+                if (pc.fiberId === fiberId && (pc.kind === 'fiber-entry' || pc.kind === 'fiber-exit')) {
+                  newGrid[r][c] = { kind: 'empty', fixed: false };
+                }
+              }
+            }
+            // Return fiber to inventory
+            const inv = inventoryRef.current;
+            const newInv = { ...inv, fiber: inv.fiber + 1 };
+            setInventory(newInv);
+            saveInventory(newInv);
+          }
+          const history = [...prev.history, cloneGrid(prev.grid)];
+          const { hitTargets, hitCheckpoints, isSolved, selfCross, crossPos, hitForbidden, forbiddenPos } =
+            computeSolved(prev.level, newGrid);
+          const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
+          const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
+          const usedMirrors = countPlayerMirrors(newGrid);
+          return {
+            ...prev,
+            grid: newGrid,
+            hitTargets,
+            hitCheckpoints,
+            isSolved,
+            remainingMirrors: prev.level.playerMirrors - usedMirrors,
+            history,
+            animState,
+            animPos,
+          };
+        }
+
+        // Cancel pending placement by tapping the same entry cell
+        if (
+          prev.fiberPhase === 'placing-exit' &&
+          prev.pendingFiberEntry?.row === row &&
+          prev.pendingFiberEntry?.col === col
+        ) {
+          // Remove the provisional entry from grid
+          const newGrid = cloneGrid(prev.grid);
+          newGrid[row][col] = { kind: 'empty', fixed: false };
+          const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+          const usedMirrors = countPlayerMirrors(newGrid);
+          return {
+            ...prev,
+            grid: newGrid,
+            hitTargets,
+            hitCheckpoints,
+            isSolved,
+            remainingMirrors: prev.level.playerMirrors - usedMirrors,
+            fiberPhase: 'idle',
+            pendingFiberEntry: null,
+          };
+        }
+
+        // Phase 1: place provisional entry
+        if (prev.fiberPhase === 'idle' && cell.kind === 'empty' && !cell.fixed) {
+          const inv = inventoryRef.current;
+          if (inv.fiber <= 0) return prev;
+          const newGrid = cloneGrid(prev.grid);
+          // Place entry without fiberId (provisional — tracer will absorb it harmlessly)
+          newGrid[row][col] = { kind: 'fiber-entry', fixed: false };
+          const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+          const usedMirrors = countPlayerMirrors(newGrid);
+          return {
+            ...prev,
+            grid: newGrid,
+            hitTargets,
+            hitCheckpoints,
+            isSolved,
+            remainingMirrors: prev.level.playerMirrors - usedMirrors,
+            fiberPhase: 'placing-exit',
+            pendingFiberEntry: { row, col },
+          };
+        }
+
+        // Phase 2: place exit and link the pair
+        if (
+          prev.fiberPhase === 'placing-exit' &&
+          cell.kind === 'empty' &&
+          !cell.fixed
+        ) {
+          const inv = inventoryRef.current;
+          const newInv = { ...inv, fiber: inv.fiber - 1 };
+          setInventory(newInv);
+          saveInventory(newInv);
+
+          const fiberId = prev.nextFiberId;
+          const newGrid = cloneGrid(prev.grid);
+
+          // Finalize the entry with the fiberId
+          const entryRow = prev.pendingFiberEntry!.row;
+          const entryCol = prev.pendingFiberEntry!.col;
+          newGrid[entryRow][entryCol] = { kind: 'fiber-entry', fixed: false, fiberId };
+
+          // Place the exit
+          newGrid[row][col] = { kind: 'fiber-exit', fixed: false, fiberId };
+
+          const history = [...prev.history, cloneGrid(prev.grid)];
+          const { hitTargets, hitCheckpoints, isSolved, selfCross, crossPos, hitForbidden, forbiddenPos } =
+            computeSolved(prev.level, newGrid);
+          const usedMirrors = countPlayerMirrors(newGrid);
+          const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
+          const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
+
+          let coinsJustEarned = prev.coinsJustEarned;
+          if (isSolved && !prev.isSolved) {
+            coinsJustEarned = computeCoinsEarned(prev.level.playerMirrors, usedMirrors);
+            const earned = coinsJustEarned;
+            const levelId = prev.level.id;
+            setCompletedLevels(prev2 => {
+              const next = new Set(prev2);
+              next.add(levelId);
+              AsyncStorage.setItem(STORAGE_KEY_PROGRESS, JSON.stringify([...next]));
+              return next;
+            });
+            setCoins(c => {
+              const next = c + earned;
+              AsyncStorage.setItem(STORAGE_KEY_COINS, String(next));
+              return next;
+            });
+          }
+
+          return {
+            ...prev,
+            grid: newGrid,
+            hitTargets,
+            hitCheckpoints,
+            isSolved,
+            remainingMirrors: prev.level.playerMirrors - usedMirrors,
+            history,
+            coinsJustEarned,
+            animState,
+            animPos,
+            fiberPhase: 'idle',
+            pendingFiberEntry: null,
+            nextFiberId: fiberId + 1,
+          };
+        }
+
+        return prev;
+      }
+
+      // ── Remove a player-placed splitter ───────────────────────────────────
       if (cell.kind === 'splitter' && !cell.fixed) {
         const inv = inventoryRef.current;
         const newInv = { ...inv, splitter: inv.splitter + 1 };
         setInventory(newInv);
         saveInventory(newInv);
-        const newGrid = prev.grid.map(r => r.map(c => ({ ...c })));
-        const history = [...prev.history, prev.grid.map(r => r.map(c => ({ ...c })))];
+        const newGrid = cloneGrid(prev.grid);
+        const history = [...prev.history, cloneGrid(prev.grid)];
         newGrid[row][col] = { kind: 'empty', fixed: false };
-        const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+        const { hitTargets, hitCheckpoints, isSolved, selfCross, crossPos, hitForbidden, forbiddenPos } =
+          computeSolved(prev.level, newGrid);
         const usedMirrors = countPlayerMirrors(newGrid);
-        return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: prev.level.playerMirrors - usedMirrors, history };
+        const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
+        const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
+        return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: prev.level.playerMirrors - usedMirrors, history, animState, animPos };
       }
 
-      // ── Fixed / non-tappable cells ───────────────────────────────────────
+      // ── Fixed / non-interactive cells ─────────────────────────────────────
       if (cell.fixed) return prev;
 
-      // ── Splitter: place from inventory ───────────────────────────────────
+      // ── Place a splitter from inventory ───────────────────────────────────
       if (prev.selectedTool === 'splitter' && cell.kind === 'empty') {
         const inv = inventoryRef.current;
         if (inv.splitter <= 0) return prev;
         const newInv = { ...inv, splitter: inv.splitter - 1 };
         setInventory(newInv);
         saveInventory(newInv);
-        const newGrid = prev.grid.map(r => r.map(c => ({ ...c })));
-        const history = [...prev.history, prev.grid.map(r => r.map(c => ({ ...c })))];
+        const newGrid = cloneGrid(prev.grid);
+        const history = [...prev.history, cloneGrid(prev.grid)];
         newGrid[row][col] = { kind: 'splitter', fixed: false };
-        const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+        const { hitTargets, hitCheckpoints, isSolved, selfCross, crossPos, hitForbidden, forbiddenPos } =
+          computeSolved(prev.level, newGrid);
         const usedMirrors = countPlayerMirrors(newGrid);
+        const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
+        const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
+
         let coinsJustEarned = prev.coinsJustEarned;
         if (isSolved && !prev.isSolved) {
           coinsJustEarned = computeCoinsEarned(prev.level.playerMirrors, usedMirrors);
@@ -244,12 +486,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
             return next;
           });
         }
-        return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: prev.level.playerMirrors - usedMirrors, history, coinsJustEarned };
+        return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: prev.level.playerMirrors - usedMirrors, history, coinsJustEarned, animState, animPos };
       }
 
-      // ── Regular mirror placement / cycling ───────────────────────────────
-      const newGrid = prev.grid.map(r => r.map(c => ({ ...c })));
-      const history = [...prev.history, prev.grid.map(r => r.map(c => ({ ...c })))];
+      // ── Mirror placement / cycling ─────────────────────────────────────────
+      const newGrid = cloneGrid(prev.grid);
+      const history = [...prev.history, cloneGrid(prev.grid)];
 
       if (cell.kind === 'empty') {
         if (prev.remainingMirrors <= 0) return prev;
@@ -263,9 +505,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return prev;
       }
 
-      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+      const { hitTargets, hitCheckpoints, isSolved, selfCross, crossPos, hitForbidden, forbiddenPos } =
+        computeSolved(prev.level, newGrid);
       const usedMirrors = countPlayerMirrors(newGrid);
       const remaining = prev.level.playerMirrors - usedMirrors;
+      const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
+      const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
 
       let coinsJustEarned = prev.coinsJustEarned;
       if (isSolved && !prev.isSolved) {
@@ -285,14 +530,38 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: remaining, history, coinsJustEarned };
+      return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: remaining, history, coinsJustEarned, animState, animPos };
     });
   }, [saveInventory]);
 
+  // ── setTool ────────────────────────────────────────────────────────────────
   const setTool = useCallback((tool: SelectedTool) => {
-    setState(prev => prev ? { ...prev, selectedTool: tool } : prev);
+    setState(prev => {
+      if (!prev) return prev;
+      // Cancel any pending fiber placement when switching tools
+      if (prev.fiberPhase === 'placing-exit' && prev.pendingFiberEntry) {
+        const { row, col } = prev.pendingFiberEntry;
+        const newGrid = cloneGrid(prev.grid);
+        newGrid[row][col] = { kind: 'empty', fixed: false };
+        const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, newGrid);
+        const usedMirrors = countPlayerMirrors(newGrid);
+        return {
+          ...prev,
+          grid: newGrid,
+          hitTargets,
+          hitCheckpoints,
+          isSolved,
+          remainingMirrors: prev.level.playerMirrors - usedMirrors,
+          selectedTool: tool,
+          fiberPhase: 'idle',
+          pendingFiberEntry: null,
+        };
+      }
+      return { ...prev, selectedTool: tool };
+    });
   }, []);
 
+  // ── undo ───────────────────────────────────────────────────────────────────
   const undo = useCallback(() => {
     setState(prev => {
       if (!prev || prev.history.length === 0) return prev;
@@ -301,24 +570,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, grid);
       const usedMirrors = countPlayerMirrors(grid);
       const remaining = prev.level.playerMirrors - usedMirrors;
-      return { ...prev, grid, hitTargets, hitCheckpoints, isSolved, remainingMirrors: remaining, history };
-    });
-  }, []);
-
-  const resetLevel = useCallback(() => {
-    setState(prev => {
-      if (!prev) return prev;
-      const grid = prev.level.grid.map(row => row.map(cell => ({ ...cell })));
-      const { hitTargets, hitCheckpoints, isSolved } = computeSolved(prev.level, grid);
       return {
         ...prev,
         grid,
         hitTargets,
         hitCheckpoints,
         isSolved,
-        remainingMirrors: prev.level.playerMirrors,
-        history: [],
-        coinsJustEarned: null,
+        remainingMirrors: remaining,
+        history,
+        animState: 'none' as AnimState,
+        animPos: null,
+        fiberPhase: 'idle' as const,
+        pendingFiberEntry: null,
       };
     });
   }, []);

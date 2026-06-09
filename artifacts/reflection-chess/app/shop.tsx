@@ -33,7 +33,34 @@ const SHOP_ITEMS: ShopItem[] = [
     cost: 8,
     icon: '💥',
   },
+  {
+    id: 'fiber',
+    name: 'Fiber Tunnel',
+    description: 'Creates an underground connection between two cells. Tap to place an entry hole, then tap a second cell for the exit. The beam travels underground and re-emerges in the same direction.',
+    cost: 12,
+    icon: '〇',
+  },
 ];
+
+function FiberIcon({ active }: { active?: boolean }) {
+  const color = active ? '#f97316' : c.mutedForeground;
+  return (
+    <View style={{
+      width: 30, height: 30,
+      borderRadius: 15,
+      borderWidth: 3,
+      borderColor: color,
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <View style={{
+        width: 10, height: 10,
+        borderRadius: 5,
+        backgroundColor: color,
+      }} />
+    </View>
+  );
+}
 
 function ItemCard({
   item,
@@ -52,7 +79,11 @@ function ItemCard({
     <View style={styles.itemCard}>
       <View style={styles.itemHeader}>
         <View style={styles.itemIconWrap}>
-          <Text style={styles.itemIcon}>{item.icon}</Text>
+          {item.id === 'fiber' ? (
+            <FiberIcon active />
+          ) : (
+            <Text style={styles.itemIcon}>{item.icon}</Text>
+          )}
         </View>
         <View style={styles.itemInfo}>
           <Text style={styles.itemName}>{item.name}</Text>
@@ -150,6 +181,18 @@ export default function ShopScreen() {
           <Text style={styles.earnTipText}>
             Solve levels using fewer mirrors than par to earn bonus coins.{'\n'}
             At par: 1 coin · 1 under par: 2 coins · 2 under par: 3 coins, and so on.
+          </Text>
+        </View>
+
+        <View style={styles.rulesTip}>
+          <Feather name="alert-triangle" size={14} color="#ff6b00" />
+          <Text style={styles.rulesTipText}>
+            <Text style={{ color: '#00d4ff', fontFamily: 'Inter_600SemiBold' }}>Short circuit</Text>
+            {' '}— if the beam crosses its own path, the puzzle resets.{'\n'}
+            <Text style={{ color: '#ff6b00', fontFamily: 'Inter_600SemiBold' }}>Combustion</Text>
+            {' '}— if the beam hits a forbidden absorber (✕), it explodes and resets.{'\n'}
+            <Text style={{ color: '#f97316', fontFamily: 'Inter_600SemiBold' }}>Fiber tunnel</Text>
+            {' '}— the beam travels underground between entry and exit holes.
           </Text>
         </View>
       </ScrollView>
@@ -306,5 +349,22 @@ const styles = StyleSheet.create({
     color: c.mutedForeground,
     flex: 1,
     lineHeight: 18,
+  },
+  rulesTip: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: 'rgba(255,100,0,0.05)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,100,0,0.15)',
+    padding: 14,
+  },
+  rulesTipText: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    color: c.mutedForeground,
+    flex: 1,
+    lineHeight: 19,
   },
 });
