@@ -1,216 +1,266 @@
-import React, { useMemo } from 'react';
-import { Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import React, { useMemo, useRef } from 'react';
+import { Animated, Dimensions, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Line, Svg } from 'react-native-svg';
 
 import colors from '@/constants/colors';
-import type { GameCell, LaserSegment, Side } from '@/types/game';
+import type { Direction, GameCell, LaserSegment, Side } from '@/types/game';
 import { traceLaser } from '@/utils/laser';
 
 const c = colors.light;
-const LINE_W = 3;
-const CELL_PADDING = 2;
+
+const SCREEN_W = Dimensions.get('window').width;
+const BOARD_MAX = Math.min(SCREEN_W - 32, 380);
+const BORDER = 1;
+
+function getCellSize(gridSize: number) {
+  return Math.floor((BOARD_MAX - BORDER * 2) / gridSize);
+}
+
+function sidePoint(side: Side, row: number, col: number, cs: number): [number, number] {
+  const cx = col * cs + cs / 2;
+  const cy = row * cs + cs / 2;
+  switch (side) {
+    case 'left':   return [col * cs, cy];
+    case 'right':  return [(col + 1) * cs, cy];
+    case 'top':    return [cx, row * cs];
+    case 'bottom': return [cx, (row + 1) * cs];
+  }
+}
+
+interface LaserLine { x1: number; y1: number; x2: number; y2: number }
+
+function segmentToLines(seg: LaserSegment, cs: number): LaserLine[] {
+  const cx = seg.col * cs + cs / 2;
+  const cy = seg.row * cs + cs / 2;
+  const [fx, fy] = sidePoint(seg.from, seg.row, seg.col, cs);
+  const [tx, ty] = sidePoint(seg.to, seg.row, seg.col, cs);
+  const isStraight = (seg.from === 'left' && seg.to === 'right') ||
+    (seg.from === 'right' && seg.to === 'left') ||
+    (seg.from === 'top' && seg.to === 'bottom') ||
+    (seg.from === 'bottom' && seg.to === 'top');
+  if (isStraight) return [{ x1: fx, y1: fy, x2: tx, y2: ty }];
+  return [
+    { x1: fx, y1: fy, x2: cx, y2: cy },
+    { x1: cx, y1: cy, x2: tx, y2: ty },
+  ];
+}
+
+const ARROW_ICONS: Record<Direction, keyof typeof Feather.glyphMap> = {
+  right: 'arrow-right',
+  left: 'arrow-left',
+  up: 'arrow-up',
+  down: 'arrow-down',
+};
+
+function PulsingRing({ size, color }: { size: number; color: string }) {
+  const scale = useRef(new Animated.Value(0.7)).current;
+  const opacity = useRef(new Animated.Value(0.8)).current;
+
+  React.useEffect(() => {
+    Animated.loop(
+      Animated.parallel([
+        Animated.sequence([
+          Animated.timing(scale, { toValue: 1.4, duration: 1000, useNativeDriver: false }),
+          Animated.timing(scale, { toValue: 0.7, duration: 1000, useNativeDriver: false }),
+        ]),
+        Animated.sequence([
+          Animated.timing(opacity, { toValue: 0.05, duration: 1000, useNativeDriver: false }),
+          Animated.timing(opacity, { toValue: 0.8, duration: 1000, useNativeDriver: false }),
+        ]),
+      ])
+    ).start();
+  }, [opacity, scale]);
+
+  return (
+    <Animated.View
+      style={{
+        position: 'absolute',
+        width: size,
+        height: size,
+        borderRadius: size / 2,
+        borderWidth: 2,
+        borderColor: color,
+        opacity,
+        transform: [{ scale }],
+      }}
+    />
+  );
+}
 
 interface Props {
   grid: GameCell[][];
   gridSize: number;
   hitTargets: Set<string>;
   onTapCell: (row: number, col: number) => void;
+  hintCell?: { row: number; col: number } | null;
 }
 
-const SCREEN_W = Dimensions.get('window').width;
-const BOARD_MAX = Math.min(SCREEN_W - 32, 380);
-
-function getCellSize(gridSize: number) {
-  return Math.floor(BOARD_MAX / gridSize);
-}
-
-function halfSegmentStyle(
-  side: Side,
-  cellSize: number,
-): Record<string, number | string> {
-  const half = cellSize / 2;
-  const lw = LINE_W;
-  const lw2 = lw / 2;
-
-  switch (side) {
-    case 'left':
-      return { position: 'absolute', left: 0, right: half, top: half - lw2, height: lw };
-    case 'right':
-      return { position: 'absolute', left: half, right: 0, top: half - lw2, height: lw };
-    case 'top':
-      return { position: 'absolute', top: 0, bottom: half, left: half - lw2, width: lw };
-    case 'bottom':
-      return { position: 'absolute', top: half, bottom: 0, left: half - lw2, width: lw };
-  }
-}
-
-function LaserSegmentView({
-  seg,
-  cellSize,
-}: {
-  seg: LaserSegment;
-  cellSize: number;
-}) {
-  const fromStyle = halfSegmentStyle(seg.from, cellSize);
-  const toStyle = halfSegmentStyle(seg.to, cellSize);
-  return (
-    <>
-      <View
-        style={[fromStyle as any, styles.laserLine]}
-        pointerEvents="none"
-      />
-      <View
-        style={[toStyle as any, styles.laserLine]}
-        pointerEvents="none"
-      />
-    </>
-  );
-}
-
-function CellView({
-  cell,
-  row,
-  col,
-  cellSize,
-  laserSegs,
-  isHitTarget,
-  onTap,
-}: {
-  cell: GameCell;
-  row: number;
-  col: number;
-  cellSize: number;
-  laserSegs: LaserSegment[];
-  isHitTarget: boolean;
-  onTap: () => void;
-}) {
-  const inner = cellSize - CELL_PADDING * 2;
-  const mirrorLen = inner * 1.35;
-  const mirrorOffset = (inner - mirrorLen) / 2;
-  const mirrorThickness = Math.max(3, inner * 0.06);
-
-  return (
-    <TouchableOpacity
-      onPress={onTap}
-      activeOpacity={cell.fixed ? 1 : 0.7}
-      style={[
-        styles.cell,
-        {
-          width: cellSize,
-          height: cellSize,
-          padding: CELL_PADDING,
-        },
-        cell.kind === 'wall' && styles.cellWall,
-      ]}
-    >
-      <View style={{ width: inner, height: inner, position: 'relative' }}>
-        {cell.kind === 'laser' && (
-          <View style={[styles.cellInner, styles.sourceCell]}>
-            <Feather name="zap" size={Math.max(14, inner * 0.45)} color={c.laser} />
-          </View>
-        )}
-
-        {cell.kind === 'target' && (
-          <View
-            style={[
-              styles.cellInner,
-              styles.targetCell,
-              isHitTarget && styles.targetCellHit,
-            ]}
-          >
-            <View
-              style={[
-                styles.targetRing,
-                { width: inner * 0.55, height: inner * 0.55, borderRadius: inner },
-                isHitTarget && styles.targetRingHit,
-              ]}
-            />
-            <View
-              style={[
-                styles.targetDot,
-                { width: inner * 0.2, height: inner * 0.2, borderRadius: inner },
-                isHitTarget && styles.targetDotHit,
-              ]}
-            />
-          </View>
-        )}
-
-        {cell.kind === 'wall' && (
-          <View style={[styles.cellInner, styles.wallCell]} />
-        )}
-
-        {(cell.kind === 'mirror-slash' || cell.kind === 'mirror-backslash') && (
-          <View style={styles.cellInner}>
-            <View
-              style={{
-                width: mirrorLen,
-                height: mirrorThickness,
-                backgroundColor: cell.fixed ? c.mirrorFixed : c.mirror,
-                borderRadius: mirrorThickness / 2,
-                position: 'absolute',
-                top: mirrorOffset + (inner - mirrorThickness) / 2,
-                left: mirrorOffset,
-                transform: [
-                  { rotate: cell.kind === 'mirror-slash' ? '-45deg' : '45deg' },
-                ],
-                shadowColor: cell.fixed ? c.mirrorFixed : c.mirror,
-                shadowOpacity: 0.7,
-                shadowRadius: 4,
-                shadowOffset: { width: 0, height: 0 },
-              }}
-            />
-          </View>
-        )}
-
-        {cell.kind === 'empty' && !cell.fixed && (
-          <View style={[styles.cellInner, styles.emptyCell]} />
-        )}
-
-        {laserSegs.map((seg, i) => (
-          <LaserSegmentView key={i} seg={seg} cellSize={inner} />
-        ))}
-      </View>
-    </TouchableOpacity>
-  );
-}
-
-export default function Board({ grid, gridSize, hitTargets, onTapCell }: Props) {
-  const cellSize = getCellSize(gridSize);
-  const boardSize = cellSize * gridSize;
+export default function Board({ grid, gridSize, hitTargets, onTapCell, hintCell }: Props) {
+  const cs = getCellSize(gridSize);
+  const boardSize = cs * gridSize + BORDER * 2;
 
   const { segments } = useMemo(() => traceLaser(grid, gridSize), [grid, gridSize]);
 
-  const segsByCell = useMemo(() => {
-    const map = new Map<string, LaserSegment[]>();
+  const laserLines = useMemo<LaserLine[]>(() => {
+    const lines: LaserLine[] = [];
     for (const seg of segments) {
-      const key = `${seg.row},${seg.col}`;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(seg);
+      lines.push(...segmentToLines(seg, cs));
     }
-    return map;
-  }, [segments]);
+    return lines;
+  }, [segments, cs]);
+
+  const pad = 3;
+  const inner = cs - pad * 2;
+  const iconSize = Math.max(11, Math.floor(inner * 0.38));
+  const arrowSize = Math.max(9, Math.floor(inner * 0.26));
+  const mirrorLen = inner * 1.28;
+  const mirrorThick = Math.max(3, Math.floor(inner * 0.07));
+  const ringSize = Math.floor(inner * 0.62);
+  const dotSize = Math.max(4, Math.floor(inner * 0.24));
+
+  const cells = grid.flatMap((row, r) =>
+    row.map((cell, cc) => {
+      const key = `${r},${cc}`;
+      const hit = hitTargets.has(key);
+      const isHint = hintCell?.row === r && hintCell?.col === cc;
+      const isWall = cell.kind === 'wall';
+      const isSource = cell.kind === 'laser';
+      const isTarget = cell.kind === 'target';
+      const isMirror = cell.kind === 'mirror-slash' || cell.kind === 'mirror-backslash';
+
+      return (
+        <TouchableOpacity
+          key={key}
+          onPress={() => onTapCell(r, cc)}
+          activeOpacity={cell.fixed ? 1 : 0.65}
+          style={[
+            {
+              width: cs,
+              height: cs,
+              borderWidth: 0.5,
+              borderColor: c.cellBorder,
+              backgroundColor: isWall ? c.wall : isHint ? 'rgba(0,212,255,0.09)' : c.cellEmpty,
+              alignItems: 'center',
+              justifyContent: 'center',
+            },
+            isHint && { borderColor: 'rgba(0,212,255,0.35)' },
+          ]}
+        >
+          {/* Inner content area */}
+          <View style={{ width: inner, height: inner, alignItems: 'center', justifyContent: 'center' }}>
+
+            {/* LASER SOURCE */}
+            {isSource && (
+              <View style={{
+                width: inner, height: inner,
+                backgroundColor: 'rgba(124,58,237,0.18)',
+                borderRadius: 4,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <Feather name="zap" size={iconSize} color={c.laser} />
+                <View style={{ position: 'absolute', bottom: 2, right: 2 }}>
+                  <Feather name={ARROW_ICONS[cell.direction ?? 'right']} size={arrowSize} color={c.laser} />
+                </View>
+              </View>
+            )}
+
+            {/* TARGET */}
+            {isTarget && (
+              <View style={{
+                width: inner, height: inner,
+                backgroundColor: hit ? 'rgba(46,213,115,0.15)' : 'rgba(255,71,87,0.12)',
+                borderRadius: 4,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {!hit && (
+                  <PulsingRing size={ringSize * 1.3} color={c.target} />
+                )}
+                <View style={{
+                  width: ringSize,
+                  height: ringSize,
+                  borderRadius: ringSize,
+                  borderWidth: 2.5,
+                  borderColor: hit ? c.targetHit : c.target,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  shadowColor: hit ? c.targetHit : c.target,
+                  shadowOpacity: 0.5,
+                  shadowRadius: 8,
+                  shadowOffset: { width: 0, height: 0 },
+                }}>
+                  <View style={{
+                    width: dotSize,
+                    height: dotSize,
+                    borderRadius: dotSize,
+                    backgroundColor: hit ? c.targetHit : c.target,
+                  }} />
+                </View>
+                {hit && (
+                  <Feather name="check" size={Math.floor(inner * 0.35)} color={c.targetHit}
+                    style={{ position: 'absolute' }} />
+                )}
+              </View>
+            )}
+
+            {/* MIRROR */}
+            {isMirror && (
+              <View style={{
+                width: inner, height: inner,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                <View style={{
+                  width: mirrorLen,
+                  height: mirrorThick,
+                  backgroundColor: cell.fixed ? c.mirrorFixed : c.mirror,
+                  borderRadius: mirrorThick / 2,
+                  transform: [{ rotate: cell.kind === 'mirror-slash' ? '-45deg' : '45deg' }],
+                  shadowColor: cell.fixed ? c.mirrorFixed : c.mirror,
+                  shadowOpacity: 0.7,
+                  shadowRadius: 5,
+                  shadowOffset: { width: 0, height: 0 },
+                }} />
+              </View>
+            )}
+
+            {/* WALL pattern */}
+            {isWall && (
+              <View style={{
+                width: inner, height: inner,
+                backgroundColor: '#080f1a',
+                borderRadius: 2,
+              }} />
+            )}
+
+          </View>
+        </TouchableOpacity>
+      );
+    })
+  );
 
   return (
     <View style={[styles.board, { width: boardSize, height: boardSize }]}>
-      {grid.map((row, r) =>
-        row.map((cell, c_) => {
-          const key = `${r},${c_}`;
-          const laserSegs = segsByCell.get(key) ?? [];
-          const isHitTarget = hitTargets.has(key);
-          return (
-            <CellView
-              key={key}
-              cell={cell}
-              row={r}
-              col={c_}
-              cellSize={cellSize}
-              laserSegs={laserSegs}
-              isHitTarget={isHitTarget}
-              onTap={() => onTapCell(r, c_)}
-            />
-          );
-        })
-      )}
+      {cells}
+
+      <Svg
+        style={[StyleSheet.absoluteFill, { pointerEvents: 'none' } as any]}
+        width={boardSize}
+        height={boardSize}
+      >
+        {laserLines.map((ln, i) => (
+          <React.Fragment key={i}>
+            <Line x1={ln.x1 + BORDER} y1={ln.y1 + BORDER} x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+              stroke={c.laser} strokeWidth={12} strokeOpacity={0.1} strokeLinecap="round" />
+            <Line x1={ln.x1 + BORDER} y1={ln.y1 + BORDER} x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+              stroke={c.laser} strokeWidth={4} strokeOpacity={0.4} strokeLinecap="round" />
+            <Line x1={ln.x1 + BORDER} y1={ln.y1 + BORDER} x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+              stroke={c.laser} strokeWidth={2} strokeOpacity={0.92} strokeLinecap="round" />
+          </React.Fragment>
+        ))}
+      </Svg>
     </View>
   );
 }
@@ -222,63 +272,7 @@ const styles = StyleSheet.create({
     backgroundColor: c.card,
     borderRadius: 8,
     overflow: 'hidden',
-    borderWidth: 1,
+    borderWidth: BORDER,
     borderColor: c.border,
-  },
-  cell: {
-    borderWidth: 0.5,
-    borderColor: c.cellBorder,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: c.cellEmpty,
-  },
-  cellWall: {
-    backgroundColor: c.wall,
-  },
-  cellInner: {
-    flex: 1,
-    width: '100%',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  sourceCell: {
-    backgroundColor: 'rgba(124, 58, 237, 0.12)',
-    borderRadius: 4,
-  },
-  targetCell: {
-    backgroundColor: 'rgba(255, 71, 87, 0.08)',
-    borderRadius: 4,
-  },
-  targetCellHit: {
-    backgroundColor: 'rgba(46, 213, 115, 0.12)',
-  },
-  targetRing: {
-    borderWidth: 2,
-    borderColor: c.target,
-    position: 'absolute',
-  },
-  targetRingHit: {
-    borderColor: c.targetHit,
-  },
-  targetDot: {
-    backgroundColor: c.target,
-    position: 'absolute',
-  },
-  targetDotHit: {
-    backgroundColor: c.targetHit,
-  },
-  wallCell: {
-    backgroundColor: c.wall,
-    borderRadius: 2,
-  },
-  emptyCell: {
-    backgroundColor: 'transparent',
-  },
-  laserLine: {
-    backgroundColor: c.laser,
-    shadowColor: c.laser,
-    shadowOpacity: 0.8,
-    shadowRadius: 3,
-    shadowOffset: { width: 0, height: 0 },
   },
 });

@@ -20,18 +20,15 @@ const { width } = Dimensions.get('window');
 
 function LaserDecoration() {
   const anim = useRef(new Animated.Value(0)).current;
-
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(anim, { toValue: 1, duration: 2200, useNativeDriver: true }),
-        Animated.timing(anim, { toValue: 0, duration: 2200, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 2400, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 0, duration: 2400, useNativeDriver: true }),
       ])
     ).start();
   }, [anim]);
-
-  const opacity = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.4, 1, 0.4] });
-
+  const opacity = anim.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0.35, 1, 0.35] });
   return (
     <Animated.View style={[styles.laserDeco, { opacity }]}>
       <View style={styles.laserH} />
@@ -47,9 +44,10 @@ export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { completedLevels } = useGame();
-
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
+
+  const nextUnlocked = Math.min(completedLevels.length + 1, 10);
 
   return (
     <View style={[styles.container, { paddingTop: topPad + 20, paddingBottom: botPad + 20 }]}>
@@ -79,25 +77,40 @@ export default function HomeScreen() {
       <View style={styles.buttons}>
         <TouchableOpacity
           style={styles.primaryBtn}
-          onPress={() => router.push('/levels')}
+          onPress={() => {
+            router.push({ pathname: '/game', params: { id: String(nextUnlocked) } });
+          }}
           activeOpacity={0.85}
         >
-          <Text style={styles.primaryBtnText}>Play</Text>
+          <Text style={styles.primaryBtnText}>
+            {completedLevels.length === 0 ? 'Start Playing' : `Continue — Level ${nextUnlocked}`}
+          </Text>
           <Feather name="chevron-right" size={20} color="#000" />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.secondaryBtn}
-          onPress={() => router.push('/levels')}
-          activeOpacity={0.85}
-        >
-          <Feather name="list" size={18} color={c.foreground} />
-          <Text style={styles.secondaryBtnText}>Level Select</Text>
-        </TouchableOpacity>
+        <View style={styles.secondaryRow}>
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { flex: 1 }]}
+            onPress={() => router.push('/levels')}
+            activeOpacity={0.85}
+          >
+            <Feather name="list" size={17} color={c.foreground} />
+            <Text style={styles.secondaryBtnText}>All Levels</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { flex: 1 }]}
+            onPress={() => router.push('/how-to-play')}
+            activeOpacity={0.85}
+          >
+            <Feather name="help-circle" size={17} color={c.foreground} />
+            <Text style={styles.secondaryBtnText}>How to Play</Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Tap mirrors to rotate · Tap empty cells to place</Text>
+        <Text style={styles.footerText}>Redirect the laser beam to hit the target</Text>
       </View>
     </View>
   );
@@ -111,17 +124,14 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 24,
   },
-  header: {
-    alignItems: 'center',
-    gap: 4,
-  },
+  header: { alignItems: 'center', gap: 4 },
   logoRow: {
     marginBottom: 8,
     padding: 16,
     borderRadius: 24,
-    backgroundColor: 'rgba(0, 255, 255, 0.08)',
+    backgroundColor: 'rgba(0,255,255,0.08)',
     borderWidth: 1,
-    borderColor: 'rgba(0, 255, 255, 0.2)',
+    borderColor: 'rgba(0,255,255,0.2)',
   },
   title: {
     fontSize: 42,
@@ -226,29 +236,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 24,
   },
-  statBox: {
-    alignItems: 'center',
-  },
-  statValue: {
-    fontSize: 28,
-    fontFamily: 'Inter_700Bold',
-    color: c.laser,
-  },
-  statLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: c.mutedForeground,
-    marginTop: 2,
-  },
-  statDivider: {
-    width: 1,
-    height: 36,
-    backgroundColor: c.border,
-  },
-  buttons: {
-    width: '100%',
-    gap: 12,
-  },
+  statBox: { alignItems: 'center' },
+  statValue: { fontSize: 28, fontFamily: 'Inter_700Bold', color: c.laser },
+  statLabel: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, marginTop: 2 },
+  statDivider: { width: 1, height: 36, backgroundColor: c.border },
+  buttons: { width: '100%', gap: 12 },
   primaryBtn: {
     backgroundColor: c.laser,
     borderRadius: 14,
@@ -258,11 +250,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
   },
-  primaryBtnText: {
-    fontSize: 18,
-    fontFamily: 'Inter_700Bold',
-    color: '#000',
-  },
+  primaryBtnText: { fontSize: 17, fontFamily: 'Inter_700Bold', color: '#000' },
+  secondaryRow: { flexDirection: 'row', gap: 10 },
   secondaryBtn: {
     backgroundColor: c.card,
     borderRadius: 14,
@@ -274,18 +263,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: c.border,
   },
-  secondaryBtnText: {
-    fontSize: 16,
-    fontFamily: 'Inter_500Medium',
-    color: c.foreground,
-  },
-  footer: {
-    paddingBottom: 4,
-  },
-  footerText: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    color: c.mutedForeground,
-    textAlign: 'center',
-  },
+  secondaryBtnText: { fontSize: 14, fontFamily: 'Inter_500Medium', color: c.foreground },
+  footer: { paddingBottom: 4 },
+  footerText: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, textAlign: 'center' },
 });
