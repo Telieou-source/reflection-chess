@@ -106,16 +106,17 @@ const level6 = (): LevelConfig => {
   return {
     id: 6,
     name: 'Corner Office',
-    description: 'Use fixed mirrors as anchors.',
+    description: 'Use the top-right anchor to reach the opposite corner.',
     gridSize: 6,
     playerMirrors: 2,
     grid: place(g, [
       { r: 0, c: 0, cell: laser('right') },
       { r: 0, c: 5, cell: backFixed() },
-      { r: 5, c: 5, cell: slashFixed() },
       { r: 5, c: 0, cell: target() },
     ]),
   };
+  // Solution: / at (4,5) turns beam left, / at (4,0) turns beam down to target at (5,0).
+  // Beam path: right→(0,5)\→down col5→(4,5)/→left row4→(4,0)/→down→(5,0) target.
 };
 
 const level7 = (): LevelConfig => {
