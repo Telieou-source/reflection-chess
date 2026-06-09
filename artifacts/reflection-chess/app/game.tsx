@@ -195,7 +195,7 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { state, inventory, loadLevel, tapCell, setTool, undo, resetLevel } = useGame();
+  const { state, inventory, loadLevel, tapCell, fireBeam, setTool, undo, resetLevel } = useGame();
   const [showBanner, setShowBanner] = useState(true);
 
   const levelId = parseInt(id ?? '1', 10);
@@ -245,7 +245,7 @@ export default function GameScreen() {
   const {
     level, grid, hitTargets, hitCheckpoints, isSolved,
     remainingMirrors, selectedTool, coinsJustEarned,
-    animState, fiberPhase, pendingFiberEntry,
+    beamFired, animState, fiberPhase, pendingFiberEntry,
   } = state;
 
   const isLevel1 = level.id === 1;
@@ -341,6 +341,7 @@ export default function GameScreen() {
           onTapCell={handleTap}
           hintCell={hintCell}
           pendingFiberEntry={pendingFiberEntry}
+          beamFired={beamFired}
         />
         {level.gridSize <= 5 && (
           <View style={styles.legend}>
@@ -363,6 +364,23 @@ export default function GameScreen() {
       </View>
 
       <View style={styles.controls}>
+        {/* ── Fire Beam button ── */}
+        <TouchableOpacity
+          style={[styles.fireBtn, beamFired && styles.fireBtnFired, animState !== 'none' && styles.fireBtnDisabled]}
+          onPress={() => {
+            if (animState !== 'none') return;
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            fireBeam();
+          }}
+          activeOpacity={0.82}
+          disabled={animState !== 'none'}
+        >
+          <Feather name="zap" size={18} color={beamFired ? '#7c3aed' : '#000'} />
+          <Text style={[styles.fireBtnText, beamFired && styles.fireBtnTextFired]}>
+            {beamFired ? 'Beam Active — modify to reset' : 'Fire Beam'}
+          </Text>
+        </TouchableOpacity>
+
         <View style={styles.controlsRow}>
           <View style={styles.mirrorCounter}>
             <Feather name="layers" size={13} color={c.mutedForeground} />
@@ -574,6 +592,34 @@ const styles = StyleSheet.create({
     borderTopColor: c.border,
     gap: 8,
     alignItems: 'center',
+  },
+  fireBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    width: '100%',
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: c.laser,
+  },
+  fireBtnFired: {
+    backgroundColor: 'rgba(124,58,237,0.12)',
+    borderWidth: 1.5,
+    borderColor: 'rgba(124,58,237,0.35)',
+  },
+  fireBtnDisabled: {
+    opacity: 0.4,
+  },
+  fireBtnText: {
+    fontSize: 15,
+    fontFamily: 'Inter_700Bold',
+    color: '#000',
+  },
+  fireBtnTextFired: {
+    color: '#7c3aed',
+    fontSize: 13,
+    fontFamily: 'Inter_500Medium',
   },
   controlsRow: {
     flexDirection: 'row',

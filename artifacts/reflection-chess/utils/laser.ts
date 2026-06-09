@@ -86,7 +86,13 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
     const beam = queue.shift()!;
     const { row, col, dir } = beam;
 
-    if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) continue;
+    if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) {
+      // Wrap to opposite edge (torus topology)
+      const wr = ((row % gridSize) + gridSize) % gridSize;
+      const wc = ((col % gridSize) + gridSize) % gridSize;
+      queue.push({ row: wr, col: wc, dir });
+      continue;
+    }
 
     // Loop guard (same cell + direction already processed)
     const key = `${row},${col},${dir}`;

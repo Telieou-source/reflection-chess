@@ -197,7 +197,18 @@ interface Props {
   onTapCell: (row: number, col: number) => void;
   hintCell?: { row: number; col: number } | null;
   pendingFiberEntry?: { row: number; col: number } | null;
+  beamFired?: boolean;
 }
+
+const EMPTY_LASER_RESULT = {
+  segments: [] as LaserSegment[],
+  hitTargets: new Set<string>(),
+  hitCheckpoints: new Set<string>(),
+  selfCross: false,
+  crossPos: null as null,
+  hitForbidden: false,
+  forbiddenPos: null as null,
+};
 
 export default function Board({
   grid,
@@ -207,11 +218,15 @@ export default function Board({
   onTapCell,
   hintCell,
   pendingFiberEntry,
+  beamFired = false,
 }: Props) {
   const cs = getCellSize(gridSize);
   const boardSize = cs * gridSize + BORDER * 2;
 
-  const laserResult = useMemo(() => traceLaser(grid, gridSize), [grid, gridSize]);
+  const laserResult = useMemo(
+    () => beamFired ? traceLaser(grid, gridSize) : EMPTY_LASER_RESULT,
+    [grid, gridSize, beamFired],
+  );
   const { segments, selfCross, crossPos, hitForbidden, forbiddenPos } = laserResult;
 
   const beamColor = selfCross ? '#ff4757' : hitForbidden ? '#ff6b00' : c.laser;
