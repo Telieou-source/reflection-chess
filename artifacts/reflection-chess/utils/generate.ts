@@ -70,8 +70,6 @@ function tryGenerate(
   totalMirrors: number,
   hintsToGive: number,
   addAbsorbers: boolean,
-  addCheckpoint: boolean,
-  addSplitter: boolean,
 ): PathResult | null {
   const grid = emptyGrid(gridSize);
   const occupied = new Set<string>();
@@ -140,60 +138,15 @@ function tryGenerate(
     if (i < hintsToGive) {
       grid[row][col] = { kind, fixed: true };
     }
-    // player mirrors left as empty — they'll be placed to solve
   }
 
   // 6. Place target
   grid[targetRow][targetCol] = { kind: 'target', fixed: true };
 
-  // 7. Optionally add splitter (only replaces a backslash player mirror)
-  //    The splitter reflects as backslash — so it only makes sense to swap a backslash mirror.
-  //    Checkpoint is placed in the straight-through direction (the beam continues undeflected).
-  let splitterMirrorIndex = -1;
-  if (addSplitter) {
-    // Candidates: player mirrors (index >= hintsToGive) that are backslash mirrors
-    const candidates = mirrorSpecs
-      .map((m, i) => ({ m, i }))
-      .filter(({ m, i }) => i >= hintsToGive && m.kind === 'mirror-backslash');
-
-    // Try each candidate in turn (not random — the attempt2 index picks sequentially)
-    for (let attempt2 = 0; attempt2 < candidates.length; attempt2++) {
-      const { m: pick, i: pickIdx } = candidates[attempt2];
-
-      // Walk in arrivalDir from the splitter, collecting all free cells.
-      // Mark all walked cells as occupied so absorbers can't block the beam path.
-      let cr = pick.row, cc = pick.col;
-      const walkCells: Array<[number, number]> = [];
-      for (let steps = 0; steps < gridSize; steps++) {
-        const [nr, nc] = stepInDir(cr, cc, pick.arrivalDir);
-        if (nr < 0 || nr >= gridSize || nc < 0 || nc >= gridSize) break;
-        if (occupied.has(`${nr},${nc}`)) break;
-        if (grid[nr][nc].kind !== 'empty') break;
-        walkCells.push([nr, nc]);
-        cr = nr; cc = nc;
-        occupied.add(`${cr},${cc}`);
-      }
-
-      if (walkCells.length === 0) continue;
-
-      // Prefer interior cells (not on grid boundary) so the checkpoint is visually approachable.
-      // The beam still hits whichever cell we pick since it travels straight from the splitter.
-      const interior = walkCells.filter(
-        ([rr, cc2]) => rr > 0 && rr < gridSize - 1 && cc2 > 0 && cc2 < gridSize - 1
-      );
-      const pool = interior.length > 0 ? interior : walkCells;
-      const [checkRow, checkCol] = pool[Math.floor(rng() * pool.length)];
-
-      grid[pick.row][pick.col] = { kind: 'splitter', fixed: true };
-      grid[checkRow][checkCol] = { kind: 'checkpoint', fixed: true };
-      splitterMirrorIndex = pickIdx;
-      break;
-    }
-  }
-
-  // 8. Optionally add a checkpoint on the beam path (no splitter variant)
-  //    We build the full solution grid first, run the tracer, then pick a cell the beam visits.
-  if (addCheckpoint && !addSplitter && splitterMirrorIndex === -1) {
+  // 7. Always add a checkpoint on the beam path.
+  //    Build the full solution grid, trace it, then pick a cell the beam visits.
+  //    Prefer interior cells (not on the grid boundary) for approachability.
+  {
     const solutionGrid = cloneGrid(grid);
     for (let i = 0; i < mirrorSpecs.length; i++) {
       const { row, col, kind } = mirrorSpecs[i];
@@ -203,7 +156,6 @@ function tryGenerate(
     }
     const { segments } = traceLaser(solutionGrid, gridSize);
 
-    // Collect cells the beam passes through (not source, not target, not already special)
     const beamCells: Array<[number, number]> = [];
     for (const seg of segments) {
       const { row: sr2, col: sc2 } = seg;
@@ -219,12 +171,16 @@ function tryGenerate(
     }
 
     if (beamCells.length > 0) {
-      const [cpR, cpC] = beamCells[Math.floor(rng() * beamCells.length)];
+      const interior = beamCells.filter(
+        ([rr, cc]) => rr > 0 && rr < gridSize - 1 && cc > 0 && cc < gridSize - 1
+      );
+      const pool = interior.length > 0 ? interior : beamCells;
+      const [cpR, cpC] = pool[Math.floor(rng() * pool.length)];
       grid[cpR][cpC] = { kind: 'checkpoint', fixed: true };
     }
   }
 
-  // 9. Add absorbers on non-path, non-special cells
+  // 8. Add absorbers on non-path, non-special cells
   if (addAbsorbers) {
     const numAbsorbers = randInt(rng, 1, 2 + Math.floor(gridSize / 3));
     const freeCells: Array<[number, number]> = [];
@@ -243,11 +199,9 @@ function tryGenerate(
   }
 
   // ─── VALIDATION PASS 1: solution must be solvable ───────────────────────
-  // Build solution grid: place all player mirrors in their solution positions
   const solutionGrid = cloneGrid(grid);
   for (let i = hintsToGive; i < mirrorSpecs.length; i++) {
     const { row, col, kind } = mirrorSpecs[i];
-    // Don't overwrite splitter (already fixed there)
     if (solutionGrid[row][col].kind === 'empty') {
       solutionGrid[row][col] = { kind, fixed: false };
     }
@@ -273,12 +227,7 @@ function tryGenerate(
   if (initSolved) return null;
 
   // ─── Compute how many player mirrors the user must place ─────────────────
-  // Player mirrors = non-hint specs that weren't replaced by a splitter
-  const playerMirrors = mirrorSpecs.filter((spec, i) => {
-    if (i < hintsToGive) return false;                     // hint — not player
-    if (grid[spec.row][spec.col].kind === 'splitter') return false; // became splitter
-    return true;
-  }).length;
+  const playerMirrors = mirrorSpecs.filter((_, i) => i >= hintsToGive).length;
 
   return { grid, playerMirrors: Math.max(1, playerMirrors) };
 }
@@ -301,11 +250,12 @@ function getDifficultyTag(tier: number): string {
 function generateFallback(levelNum: number): LevelConfig {
   const grid = emptyGrid(4);
   grid[0][0] = { kind: 'laser', direction: 'right', fixed: true };
+  grid[1][3] = { kind: 'checkpoint', fixed: true };
   grid[3][3] = { kind: 'target', fixed: true };
   return {
     id: levelNum,
     name: 'First Light',
-    description: 'Redirect the laser.',
+    description: 'Redirect the laser through the gate.',
     gridSize: 4,
     grid,
     playerMirrors: 1,
@@ -319,8 +269,6 @@ export function generateLevel(levelNum: number): LevelConfig {
   const totalMirrors  = Math.min(1 + Math.floor(tier / 2), 7);
   const hintsToGive   = Math.max(0, totalMirrors - 1 - Math.floor(tier / 4));
   const addAbsorbers  = tier >= 2;
-  const addCheckpoint = tier >= 5 && tier < 9;
-  const addSplitter   = tier >= 9;
 
   for (let attempt = 0; attempt < 400; attempt++) {
     const attemptRng = makeRng(levelNum * 7919 + 13 + attempt * 97);
@@ -330,8 +278,6 @@ export function generateLevel(levelNum: number): LevelConfig {
       totalMirrors,
       hintsToGive,
       addAbsorbers,
-      addCheckpoint,
-      addSplitter,
     );
     if (result) {
       const nameIdx   = (levelNum - 11) % LEVEL_NAMES.length;

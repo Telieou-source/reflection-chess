@@ -26,6 +26,8 @@ function RootLayoutNav() {
       <Stack.Screen name="index" />
       <Stack.Screen name="levels" />
       <Stack.Screen name="game" />
+      <Stack.Screen name="shop" />
+      <Stack.Screen name="how-to-play" />
     </Stack>
   );
 }

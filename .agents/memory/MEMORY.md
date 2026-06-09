@@ -1,0 +1,2 @@
+- [Game screen level loading](game-level-loading.md) — use a ref (not `state`) in useEffect deps to avoid infinite loadLevel loop
+- [Coin/inventory architecture](coin-inventory-arch.md) — inventoryRef/coinsRef pattern for reading in setState; setInventory never called inside setState updaters for splitter/bomb tap

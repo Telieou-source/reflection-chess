@@ -43,12 +43,11 @@ function LaserDecoration() {
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { completedLevels } = useGame();
+  const { completedLevels, coins } = useGame();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
   const solved = completedLevels.size;
-  // Find first unsolved level (tutorial first, then generated)
   let nextUnlocked = 1;
   for (let i = 1; i <= 10; i++) {
     if (!completedLevels.has(i)) { nextUnlocked = i; break; }
@@ -78,6 +77,11 @@ export default function HomeScreen() {
           <Text style={styles.statValue}>∞</Text>
           <Text style={styles.statLabel}>Levels</Text>
         </View>
+        <View style={styles.statDivider} />
+        <View style={styles.statBox}>
+          <Text style={styles.statValue}>{coins}</Text>
+          <Text style={styles.statLabel}>🪙 Coins</Text>
+        </View>
       </View>
 
       <View style={styles.buttons}>
@@ -106,17 +110,26 @@ export default function HomeScreen() {
 
           <TouchableOpacity
             style={[styles.secondaryBtn, { flex: 1 }]}
+            onPress={() => router.push('/shop')}
+            activeOpacity={0.85}
+          >
+            <Feather name="shopping-bag" size={17} color={c.foreground} />
+            <Text style={styles.secondaryBtnText}>Shop</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[styles.secondaryBtn, { flex: 1 }]}
             onPress={() => router.push('/how-to-play')}
             activeOpacity={0.85}
           >
             <Feather name="help-circle" size={17} color={c.foreground} />
-            <Text style={styles.secondaryBtnText}>How to Play</Text>
+            <Text style={styles.secondaryBtnText}>Help</Text>
           </TouchableOpacity>
         </View>
       </View>
 
       <View style={styles.footer}>
-        <Text style={styles.footerText}>Redirect the laser beam to hit the target</Text>
+        <Text style={styles.footerText}>Redirect the laser through the gate to hit the target</Text>
       </View>
     </View>
   );
@@ -238,13 +251,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: c.border,
     paddingVertical: 16,
-    paddingHorizontal: 32,
+    paddingHorizontal: 24,
     alignItems: 'center',
-    gap: 24,
+    gap: 20,
   },
-  statBox: { alignItems: 'center' },
-  statValue: { fontSize: 28, fontFamily: 'Inter_700Bold', color: c.laser },
-  statLabel: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, marginTop: 2 },
+  statBox: { alignItems: 'center', minWidth: 52 },
+  statValue: { fontSize: 26, fontFamily: 'Inter_700Bold', color: c.laser },
+  statLabel: { fontSize: 11, fontFamily: 'Inter_400Regular', color: c.mutedForeground, marginTop: 2 },
   statDivider: { width: 1, height: 36, backgroundColor: c.border },
   buttons: { width: '100%', gap: 12 },
   primaryBtn: {
@@ -269,7 +282,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: c.border,
   },
-  secondaryBtnText: { fontSize: 14, fontFamily: 'Inter_500Medium', color: c.foreground },
+  secondaryBtnText: { fontSize: 13, fontFamily: 'Inter_500Medium', color: c.foreground },
   footer: { paddingBottom: 4 },
   footerText: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, textAlign: 'center' },
 });

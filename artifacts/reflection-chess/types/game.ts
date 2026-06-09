@@ -7,9 +7,9 @@ export type CellKind =
   | 'wall'
   | 'mirror-slash'
   | 'mirror-backslash'
-  | 'splitter'      // passes beam + reflects (backslash rule); always fixed
+  | 'splitter'      // player-placed from inventory; splits beam (backslash + straight-through)
   | 'checkpoint'    // beam passes through; must be hit for win
-  | 'absorber';     // destroys beam; must route around
+  | 'absorber';     // destroys beam; use bomb item to remove
 
 export interface GameCell {
   kind: CellKind;
@@ -37,4 +37,19 @@ export interface LevelConfig {
   gridSize: number;
   grid: GameCell[][];
   playerMirrors: number;
+}
+
+export type SelectedTool = 'slash' | 'backslash' | 'splitter' | 'bomb';
+
+export interface Inventory {
+  splitter: number;
+  bomb: number;
+}
+
+export interface ShopItem {
+  id: keyof Inventory;
+  name: string;
+  description: string;
+  cost: number;
+  icon: string;
 }
