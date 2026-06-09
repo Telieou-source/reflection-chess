@@ -351,31 +351,29 @@ export default function Board({ grid, gridSize, hitTargets, hitCheckpoints, onTa
     <View style={[styles.board, { width: boardSize, height: boardSize }]}>
       {cells}
 
-      <Svg
-        style={[StyleSheet.absoluteFill, { pointerEvents: 'none' } as any]}
-        width={boardSize}
-        height={boardSize}
-      >
-        {laserLines.map((ln, i) => (
-          <React.Fragment key={i}>
-            <Line
-              x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
-              x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
-              stroke={c.laser} strokeWidth={12} strokeOpacity={0.1} strokeLinecap="round"
-            />
-            <Line
-              x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
-              x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
-              stroke={c.laser} strokeWidth={4} strokeOpacity={0.42} strokeLinecap="round"
-            />
-            <Line
-              x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
-              x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
-              stroke={c.laser} strokeWidth={2} strokeOpacity={0.9} strokeLinecap="round"
-            />
-          </React.Fragment>
-        ))}
-      </Svg>
+      <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
+        <Svg width={boardSize} height={boardSize}>
+          {laserLines.map((ln, i) => (
+            <React.Fragment key={i}>
+              <Line
+                x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
+                x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+                stroke={c.laser} strokeWidth={12} strokeOpacity={0.1} strokeLinecap="round"
+              />
+              <Line
+                x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
+                x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+                stroke={c.laser} strokeWidth={4} strokeOpacity={0.42} strokeLinecap="round"
+              />
+              <Line
+                x1={ln.x1 + BORDER} y1={ln.y1 + BORDER}
+                x2={ln.x2 + BORDER} y2={ln.y2 + BORDER}
+                stroke={c.laser} strokeWidth={2} strokeOpacity={0.9} strokeLinecap="round"
+              />
+            </React.Fragment>
+          ))}
+        </Svg>
+      </View>
     </View>
   );
 }
