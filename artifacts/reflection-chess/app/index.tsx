@@ -47,7 +47,13 @@ export default function HomeScreen() {
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
 
-  const nextUnlocked = Math.min(completedLevels.length + 1, 10);
+  const solved = completedLevels.size;
+  // Find first unsolved level (tutorial first, then generated)
+  let nextUnlocked = 1;
+  for (let i = 1; i <= 10; i++) {
+    if (!completedLevels.has(i)) { nextUnlocked = i; break; }
+    if (i === 10) nextUnlocked = 11 + solved - 10;
+  }
 
   return (
     <View style={[styles.container, { paddingTop: topPad + 20, paddingBottom: botPad + 20 }]}>
@@ -64,12 +70,12 @@ export default function HomeScreen() {
 
       <View style={styles.stats}>
         <View style={styles.statBox}>
-          <Text style={styles.statValue}>{completedLevels.length}</Text>
+          <Text style={styles.statValue}>{solved}</Text>
           <Text style={styles.statLabel}>Solved</Text>
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statBox}>
-          <Text style={styles.statValue}>10</Text>
+          <Text style={styles.statValue}>∞</Text>
           <Text style={styles.statLabel}>Levels</Text>
         </View>
       </View>
@@ -83,7 +89,7 @@ export default function HomeScreen() {
           activeOpacity={0.85}
         >
           <Text style={styles.primaryBtnText}>
-            {completedLevels.length === 0 ? 'Start Playing' : `Continue — Level ${nextUnlocked}`}
+            {solved === 0 ? 'Start Playing' : `Continue — Level ${nextUnlocked}`}
           </Text>
           <Feather name="chevron-right" size={20} color="#000" />
         </TouchableOpacity>
