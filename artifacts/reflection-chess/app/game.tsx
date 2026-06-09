@@ -195,7 +195,7 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { state, inventory, loadLevel, tapCell, fireBeam, setTool, undo, resetLevel } = useGame();
+  const { state, inventory, loadLevel, tapCell, fireBeam, onBeamComplete, setTool, undo, resetLevel } = useGame();
   const [showBanner, setShowBanner] = useState(true);
 
   const levelId = parseInt(id ?? '1', 10);
@@ -336,12 +336,14 @@ export default function GameScreen() {
         <Board
           grid={grid}
           gridSize={level.gridSize}
-          hitTargets={hitTargets}
-          hitCheckpoints={hitCheckpoints}
+          allSegments={state.allSegments}
+          beamFired={beamFired}
           onTapCell={handleTap}
+          onBeamComplete={onBeamComplete}
+          animState={animState}
+          animPos={state.animPos}
           hintCell={hintCell}
           pendingFiberEntry={pendingFiberEntry}
-          beamFired={beamFired}
         />
         {level.gridSize <= 5 && (
           <View style={styles.legend}>
