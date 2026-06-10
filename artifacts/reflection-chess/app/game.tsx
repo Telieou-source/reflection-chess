@@ -501,24 +501,38 @@ export default function GameScreen() {
         </View>
 
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mirrorPicker}>
-          <ToolBtn
-            label="/"
-            subLabel="Slash"
-            active={selectedTool === 'slash'}
-            icon={
-              <View style={[styles.mirrorPreviewLine, { transform: [{ rotate: '-45deg' }] }, selectedTool === 'slash' && styles.mirrorPreviewLineActive]} />
-            }
-            onPress={() => setTool('slash')}
-          />
-          <ToolBtn
-            label="\"
-            subLabel="Backslash"
-            active={selectedTool === 'backslash'}
-            icon={
-              <View style={[styles.mirrorPreviewLine, { transform: [{ rotate: '45deg' }] }, selectedTool === 'backslash' && styles.mirrorPreviewLineActive]} />
-            }
-            onPress={() => setTool('backslash')}
-          />
+          {(() => {
+            const mirrorActive = selectedTool === 'slash' || selectedTool === 'backslash';
+            const isBackslash  = selectedTool === 'backslash';
+            return (
+              <ToolBtn
+                label={isBackslash ? '\\' : '/'}
+                subLabel={mirrorActive ? 'Mirror · tap to flip' : 'Mirror'}
+                active={mirrorActive}
+                icon={
+                  <View style={{ alignItems: 'center', justifyContent: 'center' }}>
+                    <View style={[
+                      styles.mirrorPreviewLine,
+                      { transform: [{ rotate: isBackslash ? '45deg' : '-45deg' }] },
+                      mirrorActive && styles.mirrorPreviewLineActive,
+                    ]} />
+                    {mirrorActive && (
+                      <View style={{ position: 'absolute', bottom: -7, right: -7 }}>
+                        <Feather name="rotate-cw" size={9} color={c.laser} />
+                      </View>
+                    )}
+                  </View>
+                }
+                onPress={() => {
+                  if (mirrorActive) {
+                    setTool(isBackslash ? 'slash' : 'backslash');
+                  } else {
+                    setTool('slash');
+                  }
+                }}
+              />
+            );
+          })()}
           <ToolBtn
             label="⋈"
             subLabel="Splitter"
