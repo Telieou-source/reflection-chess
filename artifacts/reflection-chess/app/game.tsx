@@ -283,7 +283,7 @@ export default function GameScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { state, inventory, loadLevel, tapCell, fireBeam, onBeamComplete, setTool, undo, resetLevel } = useGame();
+  const { state, inventory, loadLevel, tapCell, fireBeam, onBeamComplete, setTool, undo, resetLevel, useExtraMirror } = useGame();
   const [showBanner, setShowBanner] = useState(true);
 
   const levelId = parseInt(id ?? '1', 10);
@@ -360,7 +360,7 @@ export default function GameScreen() {
     ? { row: 0, col: 3 }
     : null;
 
-  const hasItems = inventory.splitter > 0 || inventory.bomb > 0 || inventory.fiber > 0;
+  const hasItems = inventory.splitter > 0 || inventory.bomb > 0 || inventory.fiber > 0 || inventory.mirror > 0;
 
   // Hint text at the bottom
   let hintText = 'Tap empty to place · Tap mirror to cycle → rotate → remove';
@@ -574,12 +574,40 @@ export default function GameScreen() {
             }
             onPress={() => setTool('fiber')}
           />
+          <ToolBtn
+            label="+Mirror"
+            subLabel="Extra slot"
+            active={false}
+            count={inventory.mirror}
+            disabled={inventory.mirror === 0}
+            icon={
+              <View style={{ alignItems: 'center', justifyContent: 'center', width: 28, height: 28 }}>
+                <View style={[
+                  styles.mirrorPreviewLine,
+                  { transform: [{ rotate: '-45deg' }] },
+                  inventory.mirror > 0 && { backgroundColor: '#a855f7' },
+                ]} />
+                <View style={{
+                  position: 'absolute', top: -2, right: -2,
+                  width: 13, height: 13, borderRadius: 7,
+                  backgroundColor: inventory.mirror > 0 ? '#a855f7' : c.muted,
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <Text style={{ fontSize: 9, fontFamily: 'Inter_700Bold', color: '#fff', lineHeight: 13 }}>+</Text>
+                </View>
+              </View>
+            }
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              useExtraMirror();
+            }}
+          />
         </ScrollView>
 
         {!hasItems && (
           <TouchableOpacity onPress={() => router.push('/shop')} style={styles.shopTeaser}>
             <Feather name="shopping-bag" size={12} color={c.laser} />
-            <Text style={styles.shopTeaserText}>Visit the Shop to unlock Splitters, Bombs & Fiber Tunnels</Text>
+            <Text style={styles.shopTeaserText}>Visit the Shop to unlock Extra Mirrors, Splitters, Bombs & Tunnels</Text>
           </TouchableOpacity>
         )}
 

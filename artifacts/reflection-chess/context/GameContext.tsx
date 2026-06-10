@@ -67,6 +67,7 @@ interface GameContextType {
   getLevel: (id: number) => LevelConfig;
   purchaseItem: (id: keyof Inventory, cost: number) => boolean;
   spendCoins: (amount: number) => boolean;
+  useExtraMirror: () => void;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -134,7 +135,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [state, setState] = useState<GameState | null>(null);
   const [completedLevels, setCompletedLevels] = useState<Set<number>>(new Set());
   const [coins, setCoins] = useState(0);
-  const [inventory, setInventory] = useState<Inventory>({ splitter: 0, bomb: 0, fiber: 0 });
+  const [inventory, setInventory] = useState<Inventory>({ splitter: 0, bomb: 0, fiber: 0, mirror: 0 });
   const initialized = useRef(false);
 
   const pendingBeamResultRef = useRef<PendingBeamResult | null>(null);
@@ -171,7 +172,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (rawInventory) {
         try {
           const inv = JSON.parse(rawInventory) as Partial<Inventory>;
-          setInventory({ splitter: inv.splitter ?? 0, bomb: inv.bomb ?? 0, fiber: inv.fiber ?? 0 });
+          setInventory({ splitter: inv.splitter ?? 0, bomb: inv.bomb ?? 0, fiber: inv.fiber ?? 0, mirror: inv.mirror ?? 0 });
         } catch {}
       }
     });
@@ -246,6 +247,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     saveCoins(next);
     return true;
   }, [saveCoins]);
+
+  const useExtraMirror = useCallback(() => {
+    const inv = inventoryRef.current;
+    if (inv.mirror <= 0) return;
+    const newInv = { ...inv, mirror: inv.mirror - 1 };
+    setInventory(newInv);
+    saveInventory(newInv);
+    setState(prev => {
+      if (!prev || prev.isSolved) return prev;
+      return { ...prev, remainingMirrors: prev.remainingMirrors + 1 };
+    });
+  }, [saveInventory]);
 
   const fireBeam = useCallback(() => {
     setState(prev => {
@@ -470,7 +483,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     <GameContext.Provider value={{
       state, completedLevels, coins, inventory,
       loadLevel, tapCell, fireBeam, onBeamComplete, setTool, undo, resetLevel,
-      getLevel: ctxGetLevel, purchaseItem, spendCoins,
+      getLevel: ctxGetLevel, purchaseItem, spendCoins, useExtraMirror,
     }}>
       {children}
     </GameContext.Provider>

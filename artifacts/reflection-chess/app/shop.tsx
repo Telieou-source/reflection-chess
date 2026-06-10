@@ -33,6 +33,13 @@ const c = colors.light;
 
 const SHOP_ITEMS: ShopItem[] = [
   {
+    id: 'mirror',
+    name: 'Extra Mirror',
+    description: 'Adds one extra mirror placement to your current level. Use it when you\'ve run out of moves and need one more reflection. Tap the +Mirror button in the tool bar during a level.',
+    cost: 6,
+    icon: '/',
+  },
+  {
     id: 'splitter',
     name: 'Beam Splitter',
     description: 'Place on the board to split the beam into two paths simultaneously. Both the reflected and straight-through beams remain active.',

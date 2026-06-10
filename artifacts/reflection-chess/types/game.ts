@@ -59,6 +59,7 @@ export interface Inventory {
   splitter: number;
   bomb: number;
   fiber: number;
+  mirror: number;
 }
 
 export interface ShopItem {
