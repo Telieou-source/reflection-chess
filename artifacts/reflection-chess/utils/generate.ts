@@ -59,6 +59,16 @@ function cloneGrid(grid: GameCell[][]): GameCell[][] {
   return grid.map(row => row.map(cell => ({ ...cell })));
 }
 
+function freeCells(grid: GameCell[][]): [number, number][] {
+  const cells: [number, number][] = [];
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c].kind === 'empty') cells.push([r, c]);
+    }
+  }
+  return cells;
+}
+
 interface PathResult {
   grid: GameCell[][];
   playerMirrors: number;
@@ -69,8 +79,9 @@ function tryGenerate(
   gridSize: number,
   totalMirrors: number,
   hintsToGive: number,
-  addAbsorbers: boolean,
+  tier: number,
 ): PathResult | null {
+  const addAbsorbers = tier >= 2;
   const grid = emptyGrid(gridSize);
   const occupied = new Set<string>();
 
@@ -143,62 +154,104 @@ function tryGenerate(
   // 6. Place target
   grid[targetRow][targetCol] = { kind: 'target', fixed: true };
 
-  // 7. Always add a checkpoint on the beam path.
-  //    Build the full solution grid, trace it, then pick a cell the beam visits.
-  //    Prefer interior cells (not on the grid boundary) for approachability.
+  // 7. Place ordered checkpoints along the beam path
   {
-    const solutionGrid = cloneGrid(grid);
+    const numCheckpoints = tier >= 10 ? 3 : tier >= 5 ? 2 : 1;
+
+    const solutionGrid2 = cloneGrid(grid);
     for (let i = 0; i < mirrorSpecs.length; i++) {
       const { row, col, kind } = mirrorSpecs[i];
       if (i >= hintsToGive) {
-        solutionGrid[row][col] = { kind, fixed: false };
+        solutionGrid2[row][col] = { kind, fixed: false };
       }
     }
-    const { segments } = traceLaser(solutionGrid, gridSize);
+    const { segments } = traceLaser(solutionGrid2, gridSize);
 
-    const beamCells: Array<[number, number]> = [];
+    // Collect beam-path empty cells in traversal order (deduplicated)
+    const seen = new Set<string>();
+    const beamCells: [number, number][] = [];
     for (const seg of segments) {
-      const { row: sr2, col: sc2 } = seg;
-      if (
-        grid[sr2][sc2].kind === 'empty' &&
-        !(sr2 === targetRow && sc2 === targetCol)
-      ) {
-        const key = `${sr2},${sc2}`;
-        if (!beamCells.some(([rr, cc]) => rr === sr2 && cc === sc2)) {
-          beamCells.push([sr2, sc2]);
+      const key = `${seg.row},${seg.col}`;
+      if (!seen.has(key) &&
+          grid[seg.row][seg.col].kind === 'empty' &&
+          !(seg.row === targetRow && seg.col === targetCol)) {
+        seen.add(key);
+        beamCells.push([seg.row, seg.col]);
+      }
+    }
+
+    const interior = beamCells.filter(
+      ([rr, cc]) => rr > 0 && rr < gridSize - 1 && cc > 0 && cc < gridSize - 1
+    );
+    const pool = interior.length >= numCheckpoints ? interior : beamCells;
+
+    if (pool.length >= numCheckpoints) {
+      for (let i = 0; i < numCheckpoints; i++) {
+        const idx = Math.floor((i + 0.5) * pool.length / numCheckpoints);
+        const [cpR, cpC] = pool[Math.min(idx, pool.length - 1)];
+        if (grid[cpR][cpC].kind === 'empty') {
+          grid[cpR][cpC] = { kind: 'checkpoint', fixed: true, checkpointOrder: i + 1 };
         }
       }
-    }
-
-    if (beamCells.length > 0) {
-      const interior = beamCells.filter(
-        ([rr, cc]) => rr > 0 && rr < gridSize - 1 && cc > 0 && cc < gridSize - 1
-      );
-      const pool = interior.length > 0 ? interior : beamCells;
-      const [cpR, cpC] = pool[Math.floor(rng() * pool.length)];
-      grid[cpR][cpC] = { kind: 'checkpoint', fixed: true };
+    } else if (pool.length > 0) {
+      const [cpR, cpC] = pool[Math.floor(pool.length / 2)];
+      if (grid[cpR][cpC].kind === 'empty') {
+        grid[cpR][cpC] = { kind: 'checkpoint', fixed: true, checkpointOrder: 1 };
+      }
     }
   }
 
-  // 8. Add absorbers on non-path, non-special cells
+  // 8. Add absorbers on non-path cells
   if (addAbsorbers) {
     const numAbsorbers = randInt(rng, 1, 2 + Math.floor(gridSize / 3));
-    const freeCells: Array<[number, number]> = [];
-    for (let rr = 0; rr < gridSize; rr++) {
-      for (let cc = 0; cc < gridSize; cc++) {
-        if (!occupied.has(`${rr},${cc}`) && grid[rr][cc].kind === 'empty') {
-          freeCells.push([rr, cc]);
-        }
-      }
-    }
-    for (let i = 0; i < Math.min(numAbsorbers, freeCells.length); i++) {
-      const idx = Math.floor(rng() * freeCells.length);
-      const [rr, cc] = freeCells.splice(idx, 1)[0];
+    const free = freeCells(grid);
+    for (let i = 0; i < Math.min(numAbsorbers, free.length); i++) {
+      const idx = Math.floor(rng() * free.length);
+      const [rr, cc] = free.splice(idx, 1)[0];
       grid[rr][cc] = { kind: 'absorber', fixed: true };
     }
   }
 
-  // ─── VALIDATION PASS 1: solution must be solvable ───────────────────────
+  // 9. Add fixed splitters (off-path obstacles, scale with tier)
+  {
+    const numSplitters = tier >= 12 ? 3 : tier >= 7 ? 2 : tier >= 3 ? 1 : 0;
+    if (numSplitters > 0) {
+      const free = freeCells(grid);
+      for (let i = 0; i < Math.min(numSplitters, free.length); i++) {
+        const idx = Math.floor(rng() * free.length);
+        const [rr, cc] = free.splice(idx, 1)[0];
+        grid[rr][cc] = { kind: 'splitter', fixed: true };
+      }
+    }
+  }
+
+  // 10. Add fixed fiber tunnels (scale with tier)
+  {
+    const numFibers = tier >= 15 ? 2 : tier >= 6 ? 1 : 0;
+    if (numFibers > 0) {
+      const free = freeCells(grid);
+      for (let f = 0; f < Math.min(numFibers, Math.floor(free.length / 2)); f++) {
+        if (free.length < 2) break;
+        const fiberId = 200 + f;
+        const entryIdx = Math.floor(rng() * free.length);
+        const [er, ec] = free.splice(entryIdx, 1)[0];
+        const exitIdx  = Math.floor(rng() * free.length);
+        const [xr, xc] = free.splice(exitIdx,  1)[0];
+        grid[er][ec] = { kind: 'fiber-entry', fixed: true, fiberId };
+        grid[xr][xc] = { kind: 'fiber-exit',  fixed: true, fiberId };
+      }
+    }
+  }
+
+  // ─── Validation pass 1: solution must be solvable with ordered checkpoints ───
+  let totalTargets = 0, totalCheckpoints = 0;
+  for (let rr = 0; rr < gridSize; rr++) {
+    for (let cc = 0; cc < gridSize; cc++) {
+      if (grid[rr][cc].kind === 'target')     totalTargets++;
+      if (grid[rr][cc].kind === 'checkpoint') totalCheckpoints++;
+    }
+  }
+
   const solutionGrid = cloneGrid(grid);
   for (let i = hintsToGive; i < mirrorSpecs.length; i++) {
     const { row, col, kind } = mirrorSpecs[i];
@@ -207,28 +260,22 @@ function tryGenerate(
     }
   }
 
-  let totalTargets = 0, totalCheckpoints = 0;
-  for (let rr = 0; rr < gridSize; rr++) {
-    for (let cc = 0; cc < gridSize; cc++) {
-      if (solutionGrid[rr][cc].kind === 'target')     totalTargets++;
-      if (solutionGrid[rr][cc].kind === 'checkpoint') totalCheckpoints++;
-    }
-  }
+  const { hitTargets: htSol, checkpointsHitInOrder } = traceLaser(solutionGrid, gridSize);
+  const orderedOk =
+    checkpointsHitInOrder.length >= totalCheckpoints &&
+    checkpointsHitInOrder.every((v, i) => v === i + 1);
+  if (htSol.size < totalTargets || !orderedOk) return null;
 
-  const { hitTargets: htSol, hitCheckpoints: hcSol } = traceLaser(solutionGrid, gridSize);
-  if (htSol.size < totalTargets || hcSol.size < totalCheckpoints) return null;
-
-  // ─── VALIDATION PASS 2: initial state must NOT be already won ───────────
-  const { hitTargets: htInit, hitCheckpoints: hcInit } = traceLaser(grid, gridSize);
+  // ─── Validation pass 2: initial state must NOT be already solved ─────────────
+  const { hitTargets: htInit, checkpointsHitInOrder: cpInit } = traceLaser(grid, gridSize);
   const initSolved =
     totalTargets > 0 &&
     htInit.size >= totalTargets &&
-    hcInit.size >= totalCheckpoints;
+    cpInit.length >= totalCheckpoints &&
+    cpInit.every((v, i) => v === i + 1);
   if (initSolved) return null;
 
-  // ─── Compute how many player mirrors the user must place ─────────────────
   const playerMirrors = mirrorSpecs.filter((_, i) => i >= hintsToGive).length;
-
   return { grid, playerMirrors: Math.max(1, playerMirrors) };
 }
 
@@ -247,10 +294,16 @@ function getDifficultyTag(tier: number): string {
   return 'Master';
 }
 
+function getObstacleTag(tier: number): string {
+  if (tier >= 6)  return ' · splitters · fibers';
+  if (tier >= 3)  return ' · splitters';
+  return '';
+}
+
 function generateFallback(levelNum: number): LevelConfig {
   const grid = emptyGrid(4);
   grid[0][0] = { kind: 'laser', direction: 'right', fixed: true };
-  grid[1][3] = { kind: 'checkpoint', fixed: true };
+  grid[1][3] = { kind: 'checkpoint', fixed: true, checkpointOrder: 1 };
   grid[3][3] = { kind: 'target', fixed: true };
   return {
     id: levelNum,
@@ -265,10 +318,9 @@ function generateFallback(levelNum: number): LevelConfig {
 export function generateLevel(levelNum: number): LevelConfig {
   const tier = Math.max(0, levelNum - 11);
 
-  const gridSize      = Math.min(4 + Math.floor(tier / 3), 9);
-  const totalMirrors  = Math.min(1 + Math.floor(tier / 2), 7);
-  const hintsToGive   = Math.max(0, totalMirrors - 1 - Math.floor(tier / 4));
-  const addAbsorbers  = tier >= 2;
+  const gridSize     = Math.min(4 + Math.floor(tier / 3), 9);
+  const totalMirrors = Math.min(1 + Math.floor(tier / 2), 7);
+  const hintsToGive  = Math.max(0, totalMirrors - 1 - Math.floor(tier / 4));
 
   for (let attempt = 0; attempt < 400; attempt++) {
     const attemptRng = makeRng(levelNum * 7919 + 13 + attempt * 97);
@@ -277,7 +329,7 @@ export function generateLevel(levelNum: number): LevelConfig {
       gridSize,
       totalMirrors,
       hintsToGive,
-      addAbsorbers,
+      tier,
     );
     if (result) {
       const nameIdx   = (levelNum - 11) % LEVEL_NAMES.length;
@@ -286,7 +338,7 @@ export function generateLevel(levelNum: number): LevelConfig {
       return {
         id: levelNum,
         name: LEVEL_NAMES[nameIdx] + (nameSuffix > 1 ? ` ${nameSuffix}` : ''),
-        description: `${diff} · ${gridSize}×${gridSize} · ${result.playerMirrors} mirror${result.playerMirrors !== 1 ? 's' : ''}`,
+        description: `${diff} · ${gridSize}×${gridSize} · ${result.playerMirrors} mirror${result.playerMirrors !== 1 ? 's' : ''}${getObstacleTag(tier)}`,
         gridSize,
         grid: result.grid,
         playerMirrors: result.playerMirrors,

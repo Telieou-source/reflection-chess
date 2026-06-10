@@ -66,66 +66,69 @@ const level2 = (): LevelConfig => {
   };
 };
 
-// Level 3 (5x5): laser(0,0)→down, fixed \ at (3,0), target(0,4)
-// Beam: down col0 → (3,0)\ → RIGHT row3
-// Solution: / at (3,4) → UP col4 → (0,4)=target
-// Checkpoint at (3,2) on the horizontal segment.
+// Level 3 (5x5): introduce the Splitter
+// Laser(0,0)→down hits fixed splitter at (2,0):
+//   straight-through DOWN exits harmlessly at bottom
+//   backslash-split goes RIGHT along row2
+// Player places \ at (2,4) → DOWN → (3,4)[cp] → (4,4)=target
 const level3 = (): LevelConfig => {
   const g = makeGrid(5);
   return {
     id: 3,
-    name: 'Guided Path',
-    description: 'A mirror is already in place. Pass through the gate.',
+    name: 'The Fork',
+    description: 'A Splitter fires the beam in two directions. Catch the right path.',
     gridSize: 5,
     playerMirrors: 1,
     grid: place(g, [
       { r: 0, c: 0, cell: laser('down') },
-      { r: 3, c: 0, cell: backFixed() },
-      { r: 3, c: 2, cell: checkpoint() },
-      { r: 0, c: 4, cell: target() },
+      { r: 2, c: 0, cell: splitterFixed() },
+      { r: 3, c: 4, cell: checkpoint() },
+      { r: 4, c: 4, cell: target() },
     ]),
   };
 };
 
-// Level 4 (6x6): laser(0,2)→down, wall(3,2), target(5,5)
-// Solution: \ at (2,2) → RIGHT row2, \ at (2,5) → DOWN col5 → (5,5)=target
-// Checkpoint at (4,5).
+// Level 4 (6x6): splitter-focused puzzle with two ordered checkpoints
+// Laser(0,0)→right hits splitter at (0,3):
+//   right-beam exits right edge harmlessly
+//   down-beam goes DOWN col3: (1,3)(2,3)[cp1] → player
+// Solution: / at (4,3) → RIGHT → (4,4)[cp2] → \ at (4,5) → DOWN → (5,5)=target
 const level4 = (): LevelConfig => {
   const g = makeGrid(6);
   return {
     id: 4,
-    name: 'Obstacle',
-    description: 'Navigate around the wall through the gate.',
+    name: 'Beam Juggler',
+    description: 'The splitter fires two beams. Guide the right one through both gates in order.',
     gridSize: 6,
     playerMirrors: 2,
     grid: place(g, [
-      { r: 0, c: 2, cell: laser('down') },
-      { r: 3, c: 2, cell: wall() },
-      { r: 3, c: 4, cell: splitterFixed() },
-      { r: 2, c: 4, cell: checkpoint(1) },
-      { r: 4, c: 5, cell: checkpoint(2) },
+      { r: 0, c: 0, cell: laser('right') },
+      { r: 0, c: 3, cell: splitterFixed() },
+      { r: 2, c: 3, cell: checkpoint(1) },
+      { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: target() },
     ]),
   };
 };
 
-// Level 5 (6x6): laser(5,5)→up, target(0,0)
-// Solution: \ at (4,5) → LEFT row4, \ at (4,3) → UP col3, \ at (0,3) → LEFT row0 → (0,0)=target
-// Checkpoint at (2,3).
+// Level 5 (6x6): introduce the Fiber Tunnel
+// Laser(0,0)→right enters fiber-entry(100) at (0,4), teleports to fiber-exit(100) at (3,0)
+//   beam continues RIGHT from exit along row3
+// Solution: \ at (3,3) → DOWN → (4,3)[cp] → (5,3)=target
 const level5 = (): LevelConfig => {
   const g = makeGrid(6);
   return {
     id: 5,
-    name: 'Triple Bounce',
-    description: 'Three reflections to reach the target through the gate.',
+    name: 'Wormhole',
+    description: 'The fiber tunnel warps the beam to a new location. Plan for where it arrives.',
     gridSize: 6,
-    playerMirrors: 3,
+    playerMirrors: 1,
     grid: place(g, [
-      { r: 5, c: 5, cell: laser('up') },
-      { r: 1, c: 5, cell: splitterFixed() },
-      { r: 2, c: 3, cell: checkpoint(1) },
-      { r: 0, c: 2, cell: checkpoint(2) },
-      { r: 0, c: 0, cell: target() },
+      { r: 0, c: 0, cell: laser('right') },
+      { r: 0, c: 4, cell: fiberEntry(100) },
+      { r: 3, c: 0, cell: fiberExit(100) },
+      { r: 4, c: 3, cell: checkpoint() },
+      { r: 5, c: 3, cell: target() },
     ]),
   };
 };
