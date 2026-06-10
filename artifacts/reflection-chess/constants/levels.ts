@@ -98,6 +98,7 @@ const level4 = (): LevelConfig => {
     grid: place(g, [
       { r: 0, c: 2, cell: laser('down') },
       { r: 3, c: 2, cell: wall() },
+      { r: 2, c: 4, cell: checkpoint() },
       { r: 4, c: 5, cell: checkpoint() },
       { r: 5, c: 5, cell: target() },
     ]),
@@ -118,6 +119,7 @@ const level5 = (): LevelConfig => {
     grid: place(g, [
       { r: 5, c: 5, cell: laser('up') },
       { r: 2, c: 3, cell: checkpoint() },
+      { r: 0, c: 2, cell: checkpoint() },
       { r: 0, c: 0, cell: target() },
     ]),
   };
@@ -138,6 +140,7 @@ const level6 = (): LevelConfig => {
     grid: place(g, [
       { r: 0, c: 0, cell: laser('right') },
       { r: 0, c: 5, cell: backFixed() },
+      { r: 2, c: 5, cell: checkpoint() },
       { r: 4, c: 2, cell: checkpoint() },
       { r: 5, c: 0, cell: target() },
     ]),
@@ -400,8 +403,10 @@ const level7 = (): LevelConfig => {
       { r: 6, c: 2, cell: absorber() },
       { r: 6, c: 3, cell: absorber() },
       { r: 6, c: 4, cell: absorber() },
-      // Checkpoint + target
+      // Checkpoints + target
       { r: 3, c: 2, cell: checkpoint() },
+      { r: 4, c: 4, cell: checkpoint() },
+      { r: 5, c: 5, cell: checkpoint() },
       { r: 6, c: 5, cell: target() },
     ]),
   };
@@ -536,8 +541,10 @@ const level8 = (): LevelConfig => {
       { r: 5, c: 6, cell: absorber() },
       { r: 6, c: 3, cell: absorber() },
       { r: 6, c: 4, cell: absorber() },
-      // Checkpoint + target
+      // Checkpoints + target
       { r: 2, c: 3, cell: checkpoint() },
+      { r: 4, c: 4, cell: checkpoint() },
+      { r: 5, c: 5, cell: checkpoint() },
       { r: 6, c: 6, cell: target() },
     ]),
   };
@@ -735,8 +742,10 @@ const level9 = (): LevelConfig => {
       { r: 6, c: 6, cell: absorber() },
       { r: 7, c: 5, cell: absorber() },
       { r: 7, c: 6, cell: absorber() },
-      // Checkpoint + target
+      // Checkpoints + target
+      { r: 3, c: 4, cell: checkpoint() },
       { r: 4, c: 3, cell: checkpoint() },
+      { r: 4, c: 1, cell: checkpoint() },
       { r: 7, c: 0, cell: target() },
     ]),
   };
@@ -892,7 +901,9 @@ const level10 = (): LevelConfig => {
       { r: 0, c: 5, cell: absorber() },
       { r: 0, c: 6, cell: absorber() },
       { r: 0, c: 7, cell: absorber() },
-      // Checkpoint + target
+      // Checkpoints + target
+      { r: 2, c: 2, cell: checkpoint() },
+      { r: 3, c: 4, cell: checkpoint() },
       { r: 4, c: 5, cell: checkpoint() },
       { r: 7, c: 7, cell: target() },
     ]),
