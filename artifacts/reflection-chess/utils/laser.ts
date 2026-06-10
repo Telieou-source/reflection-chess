@@ -56,6 +56,7 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
   const hitTargets            = new Set<string>();
   const hitCheckpoints        = new Set<string>();
   const checkpointsHitInOrder: number[] = [];
+  const hitCoins              = new Set<string>();
 
   // cell+direction visited — prevents infinite loops through the same cell in same direction
   const visited = new Set<string>();
@@ -230,6 +231,16 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
         }
         break;
 
+      case 'coin':
+        // Beam passes through coin cells and collects them
+        hitCoins.add(`${row},${col}`);
+        segments.push({ row, col, from, to: getExitSide(dir) });
+        {
+          const [nr, nc] = stepInDir(row, col, dir);
+          queue.push({ row: nr, col: nc, dir });
+        }
+        break;
+
       default: {
         // empty — beam passes straight through
         segments.push({ row, col, from, to: getExitSide(dir) });
@@ -249,5 +260,6 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
     crossPos,
     hitForbidden,
     forbiddenPos,
+    hitCoins,
   };
 }

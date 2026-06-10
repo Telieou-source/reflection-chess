@@ -11,7 +11,8 @@ export type CellKind =
   | 'checkpoint'     // beam passes through; must be hit for win
   | 'absorber'       // forbidden — beam touching this resets the puzzle
   | 'fiber-entry'    // underground tunnel entrance; paired with a fiber-exit
-  | 'fiber-exit';    // underground tunnel exit; paired with a fiber-entry
+  | 'fiber-exit'     // underground tunnel exit; paired with a fiber-entry
+  | 'coin';          // collectible bonus coin scattered on the map
 
 export interface GameCell {
   kind: CellKind;
@@ -19,6 +20,7 @@ export interface GameCell {
   fixed: boolean;
   fiberId?: number;          // links a fiber-entry to its matching fiber-exit
   checkpointOrder?: number;  // 1-based order; beam must hit checkpoints in this order
+  coinValue?: number;        // coins awarded when beam hits this cell (default 1)
 }
 
 export interface LaserSegment {
@@ -39,6 +41,7 @@ export interface LaserResult {
   crossPos: { row: number; col: number } | null;
   hitForbidden: boolean;
   forbiddenPos: { row: number; col: number } | null;
+  hitCoins: Set<string>;                 // coin cells the beam passed through
 }
 
 export interface LevelConfig {

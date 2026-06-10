@@ -11,6 +11,7 @@ function checkpoint(order = 1): GameCell { return { kind: 'checkpoint', fixed: t
 function splitterFixed(): GameCell { return { kind: 'splitter', fixed: true }; }
 function fiberEntry(fiberId: number): GameCell { return { kind: 'fiber-entry', fixed: true, fiberId }; }
 function fiberExit(fiberId: number): GameCell { return { kind: 'fiber-exit', fixed: true, fiberId }; }
+function coin(value = 1): GameCell { return { kind: 'coin', fixed: true, coinValue: value }; }
 
 function makeGrid(size: number): GameCell[][] {
   return Array.from({ length: size }, () =>
@@ -43,6 +44,8 @@ const level1 = (): LevelConfig => {
       { r: 0, c: 0, cell: laser('right') },
       { r: 2, c: 3, cell: checkpoint() },
       { r: 3, c: 3, cell: target() },
+      { r: 1, c: 1, cell: coin(2) },
+      { r: 2, c: 2, cell: coin(1) },
     ]),
   };
 };
@@ -62,6 +65,8 @@ const level2 = (): LevelConfig => {
       { r: 0, c: 0, cell: laser('right') },
       { r: 2, c: 4, cell: checkpoint() },
       { r: 4, c: 0, cell: target() },
+      { r: 2, c: 2, cell: coin(2) },
+      { r: 3, c: 3, cell: coin(1) },
     ]),
   };
 };
@@ -84,6 +89,8 @@ const level3 = (): LevelConfig => {
       { r: 2, c: 0, cell: splitterFixed() },
       { r: 3, c: 4, cell: checkpoint() },
       { r: 4, c: 4, cell: target() },
+      { r: 1, c: 3, cell: coin(2) },
+      { r: 3, c: 2, cell: coin(1) },
     ]),
   };
 };
@@ -107,6 +114,8 @@ const level4 = (): LevelConfig => {
       { r: 2, c: 3, cell: checkpoint(1) },
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: target() },
+      { r: 1, c: 5, cell: coin(2) },
+      { r: 3, c: 1, cell: coin(1) },
     ]),
   };
 };
@@ -129,6 +138,8 @@ const level5 = (): LevelConfig => {
       { r: 3, c: 0, cell: fiberExit(100) },
       { r: 4, c: 3, cell: checkpoint() },
       { r: 5, c: 3, cell: target() },
+      { r: 1, c: 2, cell: coin(2) },
+      { r: 2, c: 4, cell: coin(1) },
     ]),
   };
 };
@@ -154,6 +165,8 @@ const level6 = (): LevelConfig => {
       { r: 2, c: 5, cell: checkpoint(1) },
       { r: 4, c: 2, cell: checkpoint(2) },
       { r: 5, c: 0, cell: target() },
+      { r: 2, c: 4, cell: coin(2) },
+      { r: 3, c: 4, cell: coin(1) },
     ]),
   };
 };
@@ -423,6 +436,8 @@ const level7 = (): LevelConfig => {
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: checkpoint(3) },
       { r: 6, c: 5, cell: target() },
+      { r: 2, c: 5, cell: coin(3) },
+      { r: 4, c: 1, cell: coin(2) },
     ]),
   };
 };
@@ -565,6 +580,8 @@ const level8 = (): LevelConfig => {
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: checkpoint(3) },
       { r: 6, c: 6, cell: target() },
+      { r: 3, c: 4, cell: coin(3) },
+      { r: 5, c: 1, cell: coin(2) },
     ]),
   };
 };
@@ -770,6 +787,9 @@ const level9 = (): LevelConfig => {
       { r: 4, c: 3, cell: checkpoint(2) },
       { r: 4, c: 1, cell: checkpoint(3) },
       { r: 7, c: 0, cell: target() },
+      { r: 5, c: 3, cell: coin(3) },
+      { r: 2, c: 2, cell: coin(2) },
+      { r: 6, c: 5, cell: coin(1) },
     ]),
   };
 };
@@ -934,6 +954,8 @@ const level10 = (): LevelConfig => {
       { r: 3, c: 4, cell: checkpoint(2) },
       { r: 4, c: 5, cell: checkpoint(3) },
       { r: 7, c: 7, cell: target() },
+      { r: 2, c: 4, cell: coin(3) },
+      { r: 5, c: 3, cell: coin(2) },
     ]),
   };
 };

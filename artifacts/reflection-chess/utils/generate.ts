@@ -275,6 +275,21 @@ function tryGenerate(
     cpInit.every((v, i) => v === i + 1);
   if (initSolved) return null;
 
+  // 11. Scatter coin collectibles on safe (non-mirror-position) free cells
+  {
+    const numCoins = tier >= 8 ? 2 : tier >= 1 ? 1 : 0;
+    if (numCoins > 0) {
+      const mirrorPositions = new Set(mirrorSpecs.slice(hintsToGive).map(m => `${m.row},${m.col}`));
+      const safe = freeCells(grid).filter(([rr, cc]) => !mirrorPositions.has(`${rr},${cc}`));
+      for (let i = 0; i < Math.min(numCoins, safe.length); i++) {
+        const idx = Math.floor(rng() * safe.length);
+        const [rr, cc] = safe.splice(idx, 1)[0];
+        const value = tier >= 10 ? 3 : tier >= 5 ? 2 : 1;
+        grid[rr][cc] = { kind: 'coin', fixed: true, coinValue: value };
+      }
+    }
+  }
+
   const playerMirrors = mirrorSpecs.filter((_, i) => i >= hintsToGive).length;
   return { grid, playerMirrors: Math.max(1, playerMirrors) };
 }

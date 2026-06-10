@@ -27,6 +27,7 @@ interface PendingBeamResult {
   crossPos: { row: number; col: number } | null;
   hitForbidden: boolean;
   forbiddenPos: { row: number; col: number } | null;
+  hitCoins: Set<string>;
 }
 
 interface GameState {
@@ -65,6 +66,7 @@ interface GameContextType {
   resetLevel: () => void;
   getLevel: (id: number) => LevelConfig;
   purchaseItem: (id: keyof Inventory, cost: number) => boolean;
+  spendCoins: (amount: number) => boolean;
 }
 
 const GameContext = createContext<GameContextType | null>(null);
@@ -135,7 +137,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [inventory, setInventory] = useState<Inventory>({ splitter: 0, bomb: 0, fiber: 0 });
   const initialized = useRef(false);
 
-  // Holds the full trace result until Board calls onBeamComplete
   const pendingBeamResultRef = useRef<PendingBeamResult | null>(null);
 
   const inventoryRef = useRef(inventory);
@@ -144,7 +145,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const coinsRef = useRef(coins);
   useEffect(() => { coinsRef.current = coins; }, [coins]);
 
-  // ── Persist helpers ─────────────────────────────────────────────────────────
   const saveInventory = useCallback((inv: Inventory) => {
     AsyncStorage.setItem(STORAGE_KEY_INVENTORY, JSON.stringify(inv));
   }, []);
@@ -153,7 +153,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.setItem(STORAGE_KEY_COINS, String(amount));
   }, []);
 
-  // ── Load persisted state ────────────────────────────────────────────────────
   useEffect(() => {
     if (initialized.current) return;
     initialized.current = true;
@@ -178,7 +177,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // ── Auto-reset after error animation ────────────────────────────────────────
   const animTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const resetLevel = useCallback(() => {
@@ -207,7 +205,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return () => { if (animTimerRef.current) clearTimeout(animTimerRef.current); };
   }, [state?.animState, resetLevel]);
 
-  // ── loadLevel ───────────────────────────────────────────────────────────────
   const loadLevel = useCallback((id: number) => {
     if (animTimerRef.current) { clearTimeout(animTimerRef.current); animTimerRef.current = null; }
     pendingBeamResultRef.current = null;
@@ -227,7 +224,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // ── purchaseItem ────────────────────────────────────────────────────────────
   const purchaseItem = useCallback((id: keyof Inventory, cost: number): boolean => {
     const currentCoins = coinsRef.current;
     if (currentCoins < cost) return false;
@@ -242,16 +238,21 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return true;
   }, [saveCoins, saveInventory]);
 
-  // ── fireBeam ────────────────────────────────────────────────────────────────
-  // Runs the trace synchronously and stores the result in a ref.
-  // Only the allSegments array is put into state here so Board can start animating.
-  // The solve/error result is applied later when Board calls onBeamComplete().
+  const spendCoins = useCallback((amount: number): boolean => {
+    const current = coinsRef.current;
+    if (current < amount) return false;
+    const next = current - amount;
+    setCoins(next);
+    saveCoins(next);
+    return true;
+  }, [saveCoins]);
+
   const fireBeam = useCallback(() => {
     setState(prev => {
       if (!prev || prev.isSolved) return prev;
       if (prev.animState !== 'none') return prev;
 
-      const { segments, hitTargets, hitCheckpoints, checkpointsHitInOrder, selfCross, crossPos, hitForbidden, forbiddenPos } =
+      const { segments, hitTargets, hitCheckpoints, checkpointsHitInOrder, selfCross, crossPos, hitForbidden, forbiddenPos, hitCoins } =
         traceLaser(prev.grid, prev.level.gridSize);
 
       const isSolved =
@@ -259,14 +260,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         checkSolved(prev.level, hitTargets, checkpointsHitInOrder);
 
       pendingBeamResultRef.current = {
-        isSolved, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos,
+        isSolved, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos, hitCoins,
       };
 
       return {
         ...prev,
         beamFired: true,
         allSegments: segments,
-        // Clear any stale result data; real values applied in onBeamComplete
         hitTargets: new Set<string>(),
         hitCheckpoints: new Set<string>(),
         isSolved: false,
@@ -276,9 +276,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // ── onBeamComplete ─────────────────────────────────────────────────────────
-  // Called by Board when the reveal animation finishes.
-  // Applies the stored solve/error result to state.
   const onBeamComplete = useCallback(() => {
     const pending = pendingBeamResultRef.current;
     if (!pending) return;
@@ -287,14 +284,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setState(prev => {
       if (!prev) return prev;
 
-      const { isSolved, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos } = pending;
+      const { isSolved, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos, hitCoins } = pending;
 
       const animState: AnimState = selfCross ? 'short-circuit' : hitForbidden ? 'combustion' : 'none';
       const animPos = selfCross ? crossPos : hitForbidden ? forbiddenPos : null;
 
+      // Collect map coins — remove them from grid and credit balance
+      let newGrid = prev.grid;
+      if (hitCoins.size > 0) {
+        newGrid = cloneGrid(prev.grid);
+        let mapCoins = 0;
+        for (const coinKey of hitCoins) {
+          const [r, c] = coinKey.split(',').map(Number);
+          const cell = newGrid[r][c];
+          if (cell.kind === 'coin') {
+            mapCoins += cell.coinValue ?? 1;
+            newGrid[r][c] = { kind: 'empty', fixed: false };
+          }
+        }
+        if (mapCoins > 0) {
+          setCoins(cc => {
+            const next = cc + mapCoins;
+            AsyncStorage.setItem(STORAGE_KEY_COINS, String(next));
+            return next;
+          });
+        }
+      }
+
       let coinsJustEarned = null as number | null;
       if (isSolved && !prev.isSolved) {
-        const usedMirrors = countPlayerMirrors(prev.grid);
+        const usedMirrors = countPlayerMirrors(newGrid);
         coinsJustEarned = computeCoinsEarned(prev.level.playerMirrors, usedMirrors);
         const earned = coinsJustEarned;
         const levelId = prev.level.id;
@@ -311,12 +330,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         });
       }
 
-      return { ...prev, hitTargets, hitCheckpoints, isSolved, animState, animPos, coinsJustEarned };
+      return { ...prev, grid: newGrid, hitTargets, hitCheckpoints, isSolved, animState, animPos, coinsJustEarned };
     });
   }, []);
 
-  // ── tapCell ─────────────────────────────────────────────────────────────────
-  // Modifies the board; resets beam so player must re-fire.
   const tapCell = useCallback((row: number, col: number) => {
     setState(prev => {
       if (!prev || prev.isSolved) return prev;
@@ -324,7 +341,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       const cell = prev.grid[row][col];
 
-      // ── Bomb ──────────────────────────────────────────────────────────────
       if (prev.selectedTool === 'bomb' && cell.kind === 'absorber' && cell.fixed) {
         const inv = inventoryRef.current;
         if (inv.bomb <= 0) return prev;
@@ -336,9 +352,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, grid: newGrid, ...clearBeamState(), remainingMirrors: prev.level.playerMirrors - countPlayerMirrors(newGrid) };
       }
 
-      // ── Fiber tool ─────────────────────────────────────────────────────────
       if (prev.selectedTool === 'fiber') {
-        // Remove existing fiber pair
         if (prev.fiberPhase === 'idle' && (cell.kind === 'fiber-entry' || cell.kind === 'fiber-exit') && !cell.fixed) {
           const fiberId = cell.fiberId;
           const newGrid = cloneGrid(prev.grid);
@@ -360,14 +374,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, grid: newGrid, ...clearBeamState(), remainingMirrors: prev.level.playerMirrors - countPlayerMirrors(newGrid), history: [...prev.history, cloneGrid(prev.grid)] };
         }
 
-        // Cancel pending entry by tapping it again
         if (prev.fiberPhase === 'placing-exit' && prev.pendingFiberEntry?.row === row && prev.pendingFiberEntry?.col === col) {
           const newGrid = cloneGrid(prev.grid);
           newGrid[row][col] = { kind: 'empty', fixed: false };
           return { ...prev, grid: newGrid, ...clearBeamState(), remainingMirrors: prev.level.playerMirrors - countPlayerMirrors(newGrid), fiberPhase: 'idle', pendingFiberEntry: null };
         }
 
-        // Phase 1: provisional entry
         if (prev.fiberPhase === 'idle' && cell.kind === 'empty') {
           const inv = inventoryRef.current;
           if (inv.fiber <= 0) return prev;
@@ -376,7 +388,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           return { ...prev, grid: newGrid, ...clearBeamState(), remainingMirrors: prev.level.playerMirrors - countPlayerMirrors(newGrid), fiberPhase: 'placing-exit', pendingFiberEntry: { row, col } };
         }
 
-        // Phase 2: place exit and link pair
         if (prev.fiberPhase === 'placing-exit' && cell.kind === 'empty') {
           const inv = inventoryRef.current;
           const newInv = { ...inv, fiber: inv.fiber - 1 };
@@ -392,7 +403,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return prev;
       }
 
-      // ── Remove player splitter ─────────────────────────────────────────────
       if (cell.kind === 'splitter' && !cell.fixed) {
         const inv = inventoryRef.current;
         const newInv = { ...inv, splitter: inv.splitter + 1 };
@@ -405,7 +415,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
       if (cell.fixed) return prev;
 
-      // ── Place splitter ─────────────────────────────────────────────────────
       if (prev.selectedTool === 'splitter' && cell.kind === 'empty') {
         const inv = inventoryRef.current;
         if (inv.splitter <= 0) return prev;
@@ -417,7 +426,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         return { ...prev, grid: newGrid, ...clearBeamState(), remainingMirrors: prev.level.playerMirrors - countPlayerMirrors(newGrid), history: [...prev.history, cloneGrid(prev.grid)] };
       }
 
-      // ── Mirror placement / cycling ─────────────────────────────────────────
       const newGrid = cloneGrid(prev.grid);
       if (cell.kind === 'empty') {
         if (prev.remainingMirrors <= 0) return prev;
@@ -433,7 +441,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, [saveInventory]);
 
-  // ── setTool ─────────────────────────────────────────────────────────────────
   const setTool = useCallback((tool: SelectedTool) => {
     setState(prev => {
       if (!prev) return prev;
@@ -447,7 +454,6 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // ── undo ────────────────────────────────────────────────────────────────────
   const undo = useCallback(() => {
     pendingBeamResultRef.current = null;
     setState(prev => {
@@ -464,7 +470,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     <GameContext.Provider value={{
       state, completedLevels, coins, inventory,
       loadLevel, tapCell, fireBeam, onBeamComplete, setTool, undo, resetLevel,
-      getLevel: ctxGetLevel, purchaseItem,
+      getLevel: ctxGetLevel, purchaseItem, spendCoins,
     }}>
       {children}
     </GameContext.Provider>
