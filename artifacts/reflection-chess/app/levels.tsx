@@ -19,7 +19,7 @@ import { useGame } from '@/context/GameContext';
 const c = colors.light;
 
 const GENERATED_PAGE_SIZE = 10;
-const TOTAL_GENERATED_PAGES = 20; // shows levels 11-210
+const TOTAL_GENERATED_PAGES = 20;
 const TUTORIAL_COUNT = LEVELS.length;
 
 function LevelCard({
@@ -78,19 +78,19 @@ export default function LevelsScreen() {
     router.push({ pathname: '/game', params: { id: String(id) } });
   }
 
+  function isLocked(id: number): boolean {
+    if (completedLevels.has(id)) return false;
+    if (id === 1) return false;
+    return !completedLevels.has(id - 1);
+  }
+
   const generatedLevels = useMemo(() => {
     const start = TUTORIAL_COUNT + 1 + generatedPage * GENERATED_PAGE_SIZE;
     return Array.from({ length: GENERATED_PAGE_SIZE }, (_, i) => getLevel(start + i));
   }, [generatedPage]);
 
-  const firstUnlocked = useMemo(() => {
-    if (completedLevels.size === 0) return 1;
-    for (let i = 1; i <= TUTORIAL_COUNT; i++) {
-      if (!completedLevels.has(i)) return i;
-    }
-    // All tutorials done — all generated levels unlocked
-    return TUTORIAL_COUNT + 1;
-  }, [completedLevels]);
+  const generatedStart = TUTORIAL_COUNT + 1 + generatedPage * GENERATED_PAGE_SIZE;
+  const generatedEnd   = generatedStart + GENERATED_PAGE_SIZE - 1;
 
   return (
     <View style={[styles.container, { paddingTop: topPad }]}>
@@ -108,76 +108,58 @@ export default function LevelsScreen() {
         contentContainerStyle={[styles.content, { paddingBottom: botPad + 24 }]}
         showsVerticalScrollIndicator={false}
       >
-        {/* Tutorial levels */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Tutorial</Text>
-            <Text style={styles.sectionSub}>10 hand-crafted puzzles</Text>
+        {/* Hand-crafted levels 1–10 */}
+        {LEVELS.map((level, idx) => {
+          const completed = completedLevels.has(level.id);
+          const locked = isLocked(level.id);
+          return (
+            <LevelCard
+              key={level.id}
+              id={level.id}
+              name={level.name}
+              description={level.description}
+              completed={completed}
+              locked={locked}
+              onPress={() => handleLevel(level.id)}
+            />
+          );
+        })}
+
+        {/* Pagination separator for generated levels */}
+        <View style={styles.separator}>
+          <View style={styles.separatorLine} />
+          <View style={styles.pageControls}>
+            <TouchableOpacity
+              style={[styles.pageBtn, generatedPage === 0 && styles.pageBtnDisabled]}
+              onPress={() => setGeneratedPage(p => Math.max(0, p - 1))}
+              disabled={generatedPage === 0}
+            >
+              <Feather name="chevron-left" size={16} color={generatedPage === 0 ? c.mutedForeground : c.foreground} />
+            </TouchableOpacity>
+            <Text style={styles.pageLabel}>{generatedStart}–{generatedEnd}</Text>
+            <TouchableOpacity
+              style={[styles.pageBtn, generatedPage >= TOTAL_GENERATED_PAGES - 1 && styles.pageBtnDisabled]}
+              onPress={() => setGeneratedPage(p => Math.min(TOTAL_GENERATED_PAGES - 1, p + 1))}
+              disabled={generatedPage >= TOTAL_GENERATED_PAGES - 1}
+            >
+              <Feather name="chevron-right" size={16} color={generatedPage >= TOTAL_GENERATED_PAGES - 1 ? c.mutedForeground : c.foreground} />
+            </TouchableOpacity>
           </View>
-          {LEVELS.map((level, idx) => {
-            const completed = completedLevels.has(level.id);
-            const prevDone = idx === 0 || completedLevels.has(LEVELS[idx - 1].id);
-            const locked = !prevDone && !completed;
-            return (
-              <LevelCard
-                key={level.id}
-                id={level.id}
-                name={level.name}
-                description={level.description}
-                completed={completed}
-                locked={locked}
-                onPress={() => handleLevel(level.id)}
-              />
-            );
-          })}
+          <View style={styles.separatorLine} />
         </View>
 
         {/* Generated levels */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View>
-              <Text style={styles.sectionTitle}>Endless</Text>
-              <Text style={styles.sectionSub}>Infinite procedural puzzles</Text>
-            </View>
-            <View style={styles.pageControls}>
-              <TouchableOpacity
-                style={[styles.pageBtn, generatedPage === 0 && styles.pageBtnDisabled]}
-                onPress={() => setGeneratedPage(p => Math.max(0, p - 1))}
-                disabled={generatedPage === 0}
-              >
-                <Feather name="chevron-left" size={18} color={generatedPage === 0 ? c.mutedForeground : c.foreground} />
-              </TouchableOpacity>
-              <Text style={styles.pageNum}>
-                {TUTORIAL_COUNT + 1 + generatedPage * GENERATED_PAGE_SIZE}–
-                {TUTORIAL_COUNT + generatedPage * GENERATED_PAGE_SIZE + GENERATED_PAGE_SIZE}
-              </Text>
-              <TouchableOpacity
-                style={[styles.pageBtn, generatedPage >= TOTAL_GENERATED_PAGES - 1 && styles.pageBtnDisabled]}
-                onPress={() => setGeneratedPage(p => Math.min(TOTAL_GENERATED_PAGES - 1, p + 1))}
-                disabled={generatedPage >= TOTAL_GENERATED_PAGES - 1}
-              >
-                <Feather name="chevron-right" size={18} color={generatedPage >= TOTAL_GENERATED_PAGES - 1 ? c.mutedForeground : c.foreground} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {generatedLevels.map(level => {
-            const completed = completedLevels.has(level.id);
-            const allTutorialsDone = LEVELS.every(l => completedLevels.has(l.id));
-            const locked = !allTutorialsDone && !completed;
-            return (
-              <LevelCard
-                key={level.id}
-                id={level.id}
-                name={level.name}
-                description={level.description}
-                completed={completed}
-                locked={locked}
-                onPress={() => handleLevel(level.id)}
-              />
-            );
-          })}
-        </View>
+        {generatedLevels.map(level => (
+          <LevelCard
+            key={level.id}
+            id={level.id}
+            name={level.name}
+            description={level.description}
+            completed={completedLevels.has(level.id)}
+            locked={isLocked(level.id)}
+            onPress={() => handleLevel(level.id)}
+          />
+        ))}
       </ScrollView>
     </View>
   );
@@ -205,27 +187,24 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(0,212,255,0.25)',
   },
   headerBadgeText: { fontSize: 12, fontFamily: 'Inter_600SemiBold', color: c.laser },
-  content: { padding: 16, gap: 24 },
-  section: { gap: 8 },
-  sectionHeader: {
+  content: { padding: 16, gap: 8 },
+  separator: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-    paddingHorizontal: 4,
+    alignItems: 'center',
+    gap: 10,
+    marginVertical: 8,
   },
-  sectionTitle: { fontSize: 16, fontFamily: 'Inter_700Bold', color: c.foreground },
-  sectionSub: { fontSize: 12, fontFamily: 'Inter_400Regular', color: c.mutedForeground, marginTop: 2 },
-  pageControls: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  separatorLine: { flex: 1, height: 1, backgroundColor: c.border },
+  pageControls: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   pageBtn: {
-    padding: 6,
+    padding: 5,
     backgroundColor: c.card,
     borderRadius: 8,
     borderWidth: 1,
     borderColor: c.border,
   },
   pageBtnDisabled: { opacity: 0.4 },
-  pageNum: { fontSize: 12, fontFamily: 'Inter_500Medium', color: c.mutedForeground, minWidth: 54, textAlign: 'center' },
+  pageLabel: { fontSize: 12, fontFamily: 'Inter_500Medium', color: c.mutedForeground, minWidth: 48, textAlign: 'center' },
   card: {
     backgroundColor: c.card,
     borderRadius: 12,

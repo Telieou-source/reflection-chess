@@ -17,7 +17,8 @@ export interface GameCell {
   kind: CellKind;
   direction?: Direction;
   fixed: boolean;
-  fiberId?: number; // links a fiber-entry to its matching fiber-exit
+  fiberId?: number;          // links a fiber-entry to its matching fiber-exit
+  checkpointOrder?: number;  // 1-based order; beam must hit checkpoints in this order
 }
 
 export interface LaserSegment {
@@ -32,7 +33,8 @@ export interface LaserSegment {
 export interface LaserResult {
   segments: LaserSegment[];
   hitTargets: Set<string>;
-  hitCheckpoints: Set<string>;
+  hitCheckpoints: Set<string>;           // which cells were lit (for animation)
+  checkpointsHitInOrder: number[];       // order values as they were encountered
   selfCross: boolean;
   crossPos: { row: number; col: number } | null;
   hitForbidden: boolean;

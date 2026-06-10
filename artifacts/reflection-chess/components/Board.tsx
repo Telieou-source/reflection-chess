@@ -1,6 +1,6 @@
 import { Feather } from '@expo/vector-icons';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Dimensions, Easing, StyleSheet, TouchableOpacity, View } from 'react-native';
+import { Animated, Dimensions, Easing, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Line, Svg } from 'react-native-svg';
 
 import colors from '@/constants/colors';
@@ -235,6 +235,12 @@ export default function Board({
     return set;
   }, [visibleSegments, grid]);
 
+  const totalCheckpoints = useMemo(() => {
+    let count = 0;
+    for (const row of grid) for (const cell of row) if (cell.kind === 'checkpoint') count++;
+    return count;
+  }, [grid]);
+
   // Beam color changes to error color after animation completes and animState is applied
   const beamColor =
     isAnimationDone && animState === 'short-circuit' ? '#ff4757' :
@@ -353,7 +359,16 @@ export default function Board({
                 <View style={{ width: inner * 0.48, height: inner * 0.48, borderRadius: 4, borderWidth: 2.5, borderColor: cpHit ? c.targetHit : '#ffa500', backgroundColor: cpHit ? 'rgba(46,213,115,0.25)' : 'rgba(255,165,0,0.15)', transform: [{ rotate: '45deg' }] }}>
                   {cpHit && <View style={{ position: 'absolute', top: '25%', left: '25%', width: '50%', height: '50%', backgroundColor: c.targetHit, borderRadius: 2 }} />}
                 </View>
-                {!cpHit && <View style={{ position: 'absolute', bottom: 2 }}><Feather name="flag" size={Math.max(8, Math.floor(inner * 0.18))} color="#ffa500" /></View>}
+                {!cpHit && totalCheckpoints > 1 && (
+                  <Text style={{ position: 'absolute', bottom: 1, fontSize: Math.max(8, Math.floor(inner * 0.20)), fontFamily: 'Inter_700Bold', color: '#ffa500' }}>
+                    {cell.checkpointOrder ?? 1}
+                  </Text>
+                )}
+                {!cpHit && totalCheckpoints === 1 && (
+                  <View style={{ position: 'absolute', bottom: 2 }}>
+                    <Feather name="flag" size={Math.max(8, Math.floor(inner * 0.18))} color="#ffa500" />
+                  </View>
+                )}
                 {cpHit && <Feather name="check" size={Math.floor(inner * 0.32)} color={c.targetHit} style={{ position: 'absolute' }} />}
               </View>
             )}

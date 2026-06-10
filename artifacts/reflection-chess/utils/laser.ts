@@ -53,8 +53,9 @@ interface Beam {
 
 export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
   const segments: LaserSegment[] = [];
-  const hitTargets     = new Set<string>();
-  const hitCheckpoints = new Set<string>();
+  const hitTargets            = new Set<string>();
+  const hitCheckpoints        = new Set<string>();
+  const checkpointsHitInOrder: number[] = [];
 
   // cell+direction visited — prevents infinite loops through the same cell in same direction
   const visited = new Set<string>();
@@ -138,6 +139,7 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
       case 'checkpoint': {
         segments.push({ row, col, from, to: getExitSide(dir) });
         hitCheckpoints.add(`${row},${col}`);
+        checkpointsHitInOrder.push(cell.checkpointOrder ?? 1);
         const [nr, nc] = stepInDir(row, col, dir);
         queue.push({ row: nr, col: nc, dir });
         break;
@@ -242,6 +244,7 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
     segments,
     hitTargets,
     hitCheckpoints,
+    checkpointsHitInOrder,
     selfCross,
     crossPos,
     hitForbidden,

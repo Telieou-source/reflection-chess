@@ -75,20 +75,25 @@ export function getLevel(id: number): LevelConfig {
   return generateLevel(id);
 }
 
-function checkSolved(level: LevelConfig, hitTargets: Set<string>, hitCheckpoints: Set<string>): boolean {
+function checkSolved(level: LevelConfig, hitTargets: Set<string>, checkpointsHitInOrder: number[]): boolean {
   let totalTargets = 0;
-  let totalCheckpoints = 0;
+  const expectedOrders: number[] = [];
   for (let r = 0; r < level.gridSize; r++) {
     for (let c = 0; c < level.gridSize; c++) {
       if (level.grid[r][c].kind === 'target')     totalTargets++;
-      if (level.grid[r][c].kind === 'checkpoint') totalCheckpoints++;
+      if (level.grid[r][c].kind === 'checkpoint') {
+        expectedOrders.push(level.grid[r][c].checkpointOrder ?? 1);
+      }
     }
   }
-  return (
-    totalTargets > 0 &&
-    hitTargets.size >= totalTargets &&
-    hitCheckpoints.size >= totalCheckpoints
-  );
+  expectedOrders.sort((a, b) => a - b);
+  if (totalTargets === 0) return false;
+  if (hitTargets.size < totalTargets) return false;
+  if (checkpointsHitInOrder.length < expectedOrders.length) return false;
+  for (let i = 0; i < expectedOrders.length; i++) {
+    if (checkpointsHitInOrder[i] !== expectedOrders[i]) return false;
+  }
+  return true;
 }
 
 function countPlayerMirrors(grid: GameCell[][]): number {
@@ -246,12 +251,12 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (!prev || prev.isSolved) return prev;
       if (prev.animState !== 'none') return prev;
 
-      const { segments, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos } =
+      const { segments, hitTargets, hitCheckpoints, checkpointsHitInOrder, selfCross, crossPos, hitForbidden, forbiddenPos } =
         traceLaser(prev.grid, prev.level.gridSize);
 
       const isSolved =
         !selfCross && !hitForbidden &&
-        checkSolved(prev.level, hitTargets, hitCheckpoints);
+        checkSolved(prev.level, hitTargets, checkpointsHitInOrder);
 
       pendingBeamResultRef.current = {
         isSolved, hitTargets, hitCheckpoints, selfCross, crossPos, hitForbidden, forbiddenPos,
