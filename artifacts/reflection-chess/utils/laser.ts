@@ -201,8 +201,8 @@ export function traceLaser(grid: GameCell[][], gridSize: number): LaserResult {
           break;
         }
 
-        // Segment showing beam entering the tunnel
-        segments.push({ row, col, from, to: getExitSide(dir) });
+        // Segment showing beam entering the tunnel (tunnelTo drives the underground trace in Board)
+        segments.push({ row, col, from, to: getExitSide(dir), tunnelTo: { row: exitRow, col: exitCol } });
 
         // Mark exit cell visited so no other beam can cross it
         const exitCellKey = `${exitRow},${exitCol}`;

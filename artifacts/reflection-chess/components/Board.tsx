@@ -148,7 +148,7 @@ function CombustionBurst({ row, col, cs }: { row: number; col: number; cs: numbe
 }
 
 // ── Animation timing ─────────────────────────────────────────────────────────
-const BEAM_STEP_MS = 55; // ms per segment — satisfying domino cadence
+const BEAM_STEP_MS = 80; // ms per segment — satisfying domino cadence
 
 // ── Props ─────────────────────────────────────────────────────────────────────
 interface Props {
@@ -248,6 +248,23 @@ export default function Board({
       isFront: segIdx === visibleSegments.length - 1,
     }));
   }, [visibleSegments, cs]);
+
+  // Underground fiber tunnel connectors — appear when the fiber-entry segment is revealed
+  const fiberTunnels = useMemo(() => {
+    return visibleSegments
+      .filter(seg => seg.tunnelTo)
+      .map(seg => {
+        const exitCell = seg.tunnelTo!;
+        const fc = fiberColor(grid[seg.row]?.[seg.col]?.fiberId);
+        return {
+          x1: seg.col * cs + cs / 2 + BORDER,
+          y1: seg.row * cs + cs / 2 + BORDER,
+          x2: exitCell.col * cs + cs / 2 + BORDER,
+          y2: exitCell.row * cs + cs / 2 + BORDER,
+          color: fc,
+        };
+      });
+  }, [visibleSegments, cs, grid]);
 
   // ── Cell sizing ───────────────────────────────────────────────────────────
   const pad = 3;
@@ -391,6 +408,24 @@ export default function Board({
       {/* ── Laser beam SVG ── */}
       <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
         <Svg width={boardSize} height={boardSize}>
+          {/* ── Underground fiber tunnel lines ── */}
+          {fiberTunnels.map((t, i) => (
+            <React.Fragment key={`fiber-${i}`}>
+              {/* Wide soft glow */}
+              <Line
+                x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                stroke={t.color} strokeWidth={12} strokeOpacity={0.18}
+                strokeDasharray="8 10" strokeLinecap="round"
+              />
+              {/* Inner core dashed */}
+              <Line
+                x1={t.x1} y1={t.y1} x2={t.x2} y2={t.y2}
+                stroke={t.color} strokeWidth={2.5} strokeOpacity={0.72}
+                strokeDasharray="5 7" strokeLinecap="round"
+              />
+            </React.Fragment>
+          ))}
+
           {segmentLines.flatMap(({ lines, isFront }, segIdx) =>
             lines.map((ln, li) => (
               <React.Fragment key={`${segIdx}-${li}`}>

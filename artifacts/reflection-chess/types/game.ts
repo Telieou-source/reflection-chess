@@ -25,6 +25,8 @@ export interface LaserSegment {
   col: number;
   from: Side;
   to: Side;
+  /** fiber-entry only: coordinates of the matching exit cell */
+  tunnelTo?: { row: number; col: number };
 }
 
 export interface LaserResult {

@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Animated,
+  Easing,
   Platform,
   ScrollView,
   StyleSheet,
@@ -39,6 +40,64 @@ function CoinBurst({ coins }: { coins: number }) {
   );
 }
 
+// ── Win overlay — particles, ring pulse, bouncy card ────────────────────────
+const WIN_PARTICLE_COLORS = [c.laser, '#7c3aed', '#2ed573', '#ffd700', c.laser, '#a855f7', '#00d4ff', '#ff6b9d'];
+const WIN_PARTICLE_COUNT = 12;
+
+function WinParticle({ angle, delay, radius, color }: {
+  angle: number; delay: number; radius: number; color: string;
+}) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(anim, {
+        toValue: 1, duration: 680,
+        easing: Easing.out(Easing.exp),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [anim, delay]);
+
+  const tx = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.cos(angle) * radius] });
+  const ty = anim.interpolate({ inputRange: [0, 1], outputRange: [0, Math.sin(angle) * radius] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.12, 0.65, 1], outputRange: [0, 1, 0.9, 0] });
+  const scale   = anim.interpolate({ inputRange: [0, 0.12, 1], outputRange: [0.2, 1.4, 0.5] });
+  const size = 6 + Math.random() * 6;
+
+  return (
+    <Animated.View style={{
+      position: 'absolute',
+      width: size, height: size, borderRadius: size / 2,
+      backgroundColor: color,
+      opacity,
+      transform: [{ translateX: tx }, { translateY: ty }, { scale }],
+      shadowColor: color, shadowOpacity: 0.8, shadowRadius: 6,
+      shadowOffset: { width: 0, height: 0 },
+    }} />
+  );
+}
+
+function WinRing({ delay }: { delay: number }) {
+  const anim = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.sequence([
+      Animated.delay(delay),
+      Animated.timing(anim, { toValue: 1, duration: 900, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+    ]).start();
+  }, [anim, delay]);
+  const scale   = anim.interpolate({ inputRange: [0, 1], outputRange: [0.1, 3.0] });
+  const opacity = anim.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0.8, 0.5, 0] });
+  return (
+    <Animated.View style={{
+      position: 'absolute',
+      width: 80, height: 80, borderRadius: 40,
+      borderWidth: 2, borderColor: c.laser,
+      opacity, transform: [{ scale }],
+    }} />
+  );
+}
+
 function WinOverlay({ level, coinsEarned, onNext, onMenu, onRetry }: {
   level: number;
   coinsEarned: number | null;
@@ -46,22 +105,51 @@ function WinOverlay({ level, coinsEarned, onNext, onMenu, onRetry }: {
   onMenu: () => void;
   onRetry: () => void;
 }) {
-  const scale = useRef(new Animated.Value(0.65)).current;
+  const scale   = useRef(new Animated.Value(0.3)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const iconRot = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 65, friction: 8 }),
-      Animated.timing(opacity, { toValue: 1, duration: 280, useNativeDriver: true }),
+      Animated.spring(scale, { toValue: 1, useNativeDriver: true, tension: 90, friction: 7 }),
+      Animated.timing(opacity, { toValue: 1, duration: 200, useNativeDriver: true }),
+      Animated.sequence([
+        Animated.timing(iconRot, { toValue: 1, duration: 500, easing: Easing.out(Easing.back(2)), useNativeDriver: true }),
+      ]),
     ]).start();
-  }, [opacity, scale]);
+  }, [opacity, scale, iconRot]);
+
+  const rotate = iconRot.interpolate({ inputRange: [0, 1], outputRange: ['-30deg', '0deg'] });
+
+  const particles = Array.from({ length: WIN_PARTICLE_COUNT }, (_, i) => ({
+    angle: (i / WIN_PARTICLE_COUNT) * Math.PI * 2 + (i % 2 === 0 ? 0.15 : -0.1),
+    delay:  i * 22,
+    radius: 90 + (i % 3) * 28,
+    color: WIN_PARTICLE_COLORS[i % WIN_PARTICLE_COLORS.length],
+  }));
 
   return (
     <Animated.View style={[styles.winOverlay, { opacity }]}>
+      {/* Expanding rings */}
+      <View style={styles.winRingContainer} pointerEvents="none">
+        <WinRing delay={0} />
+        <WinRing delay={220} />
+        <WinRing delay={430} />
+      </View>
+
+      {/* Particle burst */}
+      <View style={styles.winParticleOrigin} pointerEvents="none">
+        {particles.map((p, i) => (
+          <WinParticle key={i} angle={p.angle} delay={p.delay} radius={p.radius} color={p.color} />
+        ))}
+      </View>
+
       <Animated.View style={[styles.winCard, { transform: [{ scale }] }]}>
-        <View style={styles.winIcon}>
-          <Feather name="zap" size={36} color={c.laser} />
-        </View>
+        <View style={styles.winIconGlow} />
+        <Animated.View style={[styles.winIcon, { transform: [{ rotate }] }]}>
+          <Feather name="zap" size={38} color={c.laser} />
+        </Animated.View>
+
         <Text style={styles.winTitle}>Beam on Target!</Text>
         <Text style={styles.winSub}>Level {level} complete</Text>
 
@@ -207,6 +295,25 @@ export default function GameScreen() {
       loadLevel(levelId);
     }
   }, [levelId, loadLevel]);
+
+  // ── Haptic feedback on beam results ─────────────────────────────────────────
+  const prevIsSolvedRef   = useRef(false);
+  const prevAnimStateRef  = useRef<string>('none');
+  useEffect(() => {
+    const solved    = state?.isSolved    ?? false;
+    const animState = state?.animState   ?? 'none';
+    if (solved && !prevIsSolvedRef.current) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } else if (animState === 'short-circuit' && prevAnimStateRef.current !== 'short-circuit') {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (animState === 'combustion' && prevAnimStateRef.current !== 'combustion') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      setTimeout(() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium), 130);
+    }
+    prevIsSolvedRef.current  = solved;
+    prevAnimStateRef.current = animState;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state?.isSolved, state?.animState]);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const botPad = Platform.OS === 'web' ? 34 : insets.bottom;
@@ -721,6 +828,27 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(7,14,28,0.88)',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  winRingContainer: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  winParticleOrigin: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  winIconGlow: {
+    position: 'absolute',
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: 'rgba(0,212,255,0.12)',
+    shadowColor: c.laser,
+    shadowOpacity: 0.6,
+    shadowRadius: 30,
+    shadowOffset: { width: 0, height: 0 },
   },
   winCard: {
     backgroundColor: c.card,
