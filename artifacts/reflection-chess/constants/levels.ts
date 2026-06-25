@@ -31,7 +31,9 @@ function place(
 }
 
 // Level 1 (4x4): laser(0,0)→right, target(3,3)
-// Solution: \ at (0,3) → DOWN col3 → (2,3)=checkpoint → (3,3)=target
+// Solution (1 mirror): \ at (0,3) → DOWN col3 → (2,3)=checkpoint → (3,3)=target
+// Beam path: row0→(0,1)(0,2)→mirror at (0,3)→col3→(1,3)(2,3)[cp](3,3)[target]
+// Coins lie on the solution path — collected automatically when solving.
 const level1 = (): LevelConfig => {
   const g = makeGrid(4);
   return {
@@ -44,15 +46,20 @@ const level1 = (): LevelConfig => {
       { r: 0, c: 0, cell: laser('right') },
       { r: 2, c: 3, cell: checkpoint() },
       { r: 3, c: 3, cell: target() },
-      { r: 1, c: 1, cell: coin(2) },
-      { r: 2, c: 2, cell: coin(1) },
+      { r: 0, c: 2, cell: coin(1) },
+      { r: 1, c: 3, cell: coin(2) },
     ]),
   };
 };
 
 // Level 2 (5x5): laser(0,0)→right, target(4,0)
-// Solution: \ at (0,4) → DOWN col4, / at (4,4) → LEFT row4 → (4,0)=target
-// Checkpoint at (2,4) on the vertical segment.
+// Par solution (2 mirrors): \ at (0,4) → DOWN col4 → (2,4)=cp, / at (4,4) → LEFT row4 → (4,0)=target
+//   Beam path: row0→(0,1)(0,2[coinA])(0,3)→col4→(1,4)(2,4)[cp](3,4)→row4→(4,3)(4,2)(4,1)→(4,0)[target]
+//   CoinA at (0,2) is on this path — always collected.
+//
+// Coin detour (3 mirrors, uses extra mirror): \ at (0,4) → DOWN col4 → (2,4)=cp,
+//   / at (3,4) → LEFT row3 → (3,3)[coinB!](3,2)(3,1), / at (3,0) → DOWN col0 → (4,0)=target
+//   CoinB at (3,3) only collected via this detour.
 const level2 = (): LevelConfig => {
   const g = makeGrid(5);
   return {
@@ -60,13 +67,13 @@ const level2 = (): LevelConfig => {
     name: 'Double Bounce',
     description: 'Two reflections required. Pass through the gate.',
     gridSize: 5,
-    playerMirrors: 2,
+    playerMirrors: 3,
     grid: place(g, [
       { r: 0, c: 0, cell: laser('right') },
       { r: 2, c: 4, cell: checkpoint() },
       { r: 4, c: 0, cell: target() },
-      { r: 2, c: 2, cell: coin(2) },
-      { r: 3, c: 3, cell: coin(1) },
+      { r: 0, c: 2, cell: coin(1) },
+      { r: 3, c: 3, cell: coin(2) },
     ]),
   };
 };
@@ -74,8 +81,10 @@ const level2 = (): LevelConfig => {
 // Level 3 (5x5): introduce the Splitter
 // Laser(0,0)→down hits fixed splitter at (2,0):
 //   straight-through DOWN exits harmlessly at bottom
-//   backslash-split goes RIGHT along row2
-// Player places \ at (2,4) → DOWN → (3,4)[cp] → (4,4)=target
+//   right-split goes RIGHT along row2
+// Solution (1 mirror): \ at (2,4) → DOWN col4 → (3,4)=checkpoint → (4,4)=target
+// Beam path: col0→(1,0[coinA])→splitter(2,0)→row2→(2,1)(2,2[coinB])(2,3)→col4→(3,4)[cp](4,4)[target]
+// Coins lie on the mandatory beam path — collected automatically when solving.
 const level3 = (): LevelConfig => {
   const g = makeGrid(5);
   return {
@@ -89,8 +98,8 @@ const level3 = (): LevelConfig => {
       { r: 2, c: 0, cell: splitterFixed() },
       { r: 3, c: 4, cell: checkpoint() },
       { r: 4, c: 4, cell: target() },
-      { r: 1, c: 3, cell: coin(2) },
-      { r: 3, c: 2, cell: coin(1) },
+      { r: 1, c: 0, cell: coin(1) },
+      { r: 2, c: 2, cell: coin(2) },
     ]),
   };
 };
@@ -98,8 +107,11 @@ const level3 = (): LevelConfig => {
 // Level 4 (6x6): splitter-focused puzzle with two ordered checkpoints
 // Laser(0,0)→right hits splitter at (0,3):
 //   right-beam exits right edge harmlessly
-//   down-beam goes DOWN col3: (1,3)(2,3)[cp1] → player
-// Solution: / at (4,3) → RIGHT → (4,4)[cp2] → \ at (4,5) → DOWN → (5,5)=target
+//   down-beam goes DOWN col3: (1,3)(2,3)[cp1] → player mirrors
+// Solution (2 mirrors): \ at (4,3) → RIGHT row4 → (4,4)=cp2, \ at (4,5) → DOWN → (5,5)=target
+// Beam path: row0→(0,1[coinA])(0,2)→splitter(0,3)→col3→(1,3[coinB])(2,3)[cp1](3,3)
+//            →row4→(4,4)[cp2]→col5→(5,5)[target]
+// Coins on mandatory path — always collected when solving.
 const level4 = (): LevelConfig => {
   const g = makeGrid(6);
   return {
@@ -114,8 +126,8 @@ const level4 = (): LevelConfig => {
       { r: 2, c: 3, cell: checkpoint(1) },
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: target() },
-      { r: 1, c: 5, cell: coin(2) },
-      { r: 3, c: 1, cell: coin(1) },
+      { r: 0, c: 1, cell: coin(1) },
+      { r: 1, c: 3, cell: coin(2) },
     ]),
   };
 };
@@ -123,7 +135,9 @@ const level4 = (): LevelConfig => {
 // Level 5 (6x6): introduce the Fiber Tunnel
 // Laser(0,0)→right enters fiber-entry(100) at (0,4), teleports to fiber-exit(100) at (3,0)
 //   beam continues RIGHT from exit along row3
-// Solution: \ at (3,3) → DOWN → (4,3)[cp] → (5,3)=target
+// Solution (1 mirror): \ at (3,3) → DOWN col3 → (4,3)=checkpoint → (5,3)=target
+// Beam path: row0→(0,1)(0,2[coinA])(0,3)→fiber(0,4)→exit(3,0)→row3→(3,1)(3,2[coinB])→col3→(4,3)[cp](5,3)[target]
+// CoinA(0,2) on row0 approach, CoinB(3,2) on row3 post-exit — both on solution path.
 const level5 = (): LevelConfig => {
   const g = makeGrid(6);
   return {
@@ -138,16 +152,23 @@ const level5 = (): LevelConfig => {
       { r: 3, c: 0, cell: fiberExit(100) },
       { r: 4, c: 3, cell: checkpoint() },
       { r: 5, c: 3, cell: target() },
-      { r: 1, c: 2, cell: coin(2) },
-      { r: 2, c: 4, cell: coin(1) },
+      { r: 0, c: 2, cell: coin(1) },
+      { r: 3, c: 2, cell: coin(2) },
     ]),
   };
 };
 
 // Level 6 (6x6): laser(0,0)→right, fixed \ at (0,5), target(5,0)
-// Beam: right→(0,5)\→DOWN col5
-// Solution: / at (4,5) → LEFT row4, / at (4,0) → DOWN col0 → (5,0)=target
-// Checkpoint at (4,2).
+// Beam: right→(0,5)\→DOWN col5 → cp1(2,5) → player mirrors → cp2(4,2) → target(5,0)
+//
+// Par solution (2 mirrors): / at (4,5) → LEFT row4 → cp2(4,2), / at (4,0) → DOWN col0 → target(5,0)
+//   Beam: row0→(0,1)(0,2)(0,3[coinA])(0,4)→fixed\(0,5)→col5→(1,5)(2,5)[cp1](3,5)
+//         →row4→(4,4)(4,3)(4,2)[cp2](4,1)→col0→(5,0)[target]
+//   CoinA at (0,3) on row0 approach — always collected.
+//
+// Coin detour (3 mirrors): / at (3,5) → LEFT row3 → (3,4)[coinB!](3,3)(3,2), / at (3,2)? No:
+//   / at (3,5) → LEFT row3 → (3,4)[coinB!], / at (3,2) → DOWN col2 → (4,2)[cp2!], / at (5,2) → LEFT row5 → (5,1)(5,0)[target]
+//   CoinB at (3,4) only collected via this detour route.
 const level6 = (): LevelConfig => {
   const g = makeGrid(6);
   return {
@@ -155,7 +176,7 @@ const level6 = (): LevelConfig => {
     name: 'Corner Office',
     description: 'Use the top-right anchor to reach the opposite corner.',
     gridSize: 6,
-    playerMirrors: 2,
+    playerMirrors: 3,
     grid: place(g, [
       { r: 0, c: 0, cell: laser('right') },
       { r: 0, c: 5, cell: backFixed() },
@@ -165,8 +186,8 @@ const level6 = (): LevelConfig => {
       { r: 2, c: 5, cell: checkpoint(1) },
       { r: 4, c: 2, cell: checkpoint(2) },
       { r: 5, c: 0, cell: target() },
-      { r: 2, c: 4, cell: coin(2) },
-      { r: 3, c: 4, cell: coin(1) },
+      { r: 0, c: 3, cell: coin(1) },
+      { r: 3, c: 4, cell: coin(2) },
     ]),
   };
 };
@@ -436,8 +457,10 @@ const level7 = (): LevelConfig => {
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: checkpoint(3) },
       { r: 6, c: 5, cell: target() },
-      { r: 2, c: 5, cell: coin(3) },
-      { r: 4, c: 1, cell: coin(2) },
+      // Solution: \ at (0,2) → DOWN col2 → cp1(3,2), \ at (4,2) → RIGHT row4 → cp2(4,4), \ at (4,5) → DOWN col5 → cp3(5,5) → target(6,5)
+      // CoinA(0,1) on row0 approach; CoinB(2,2) on col2 descent — both on solution path.
+      { r: 0, c: 1, cell: coin(2) },
+      { r: 2, c: 2, cell: coin(3) },
     ]),
   };
 };
@@ -580,8 +603,10 @@ const level8 = (): LevelConfig => {
       { r: 4, c: 4, cell: checkpoint(2) },
       { r: 5, c: 5, cell: checkpoint(3) },
       { r: 6, c: 6, cell: target() },
-      { r: 3, c: 4, cell: coin(3) },
-      { r: 5, c: 1, cell: coin(2) },
+      // Solution: \ at (0,3) → DOWN col3 → cp1(2,3), \ at (4,3) → RIGHT row4 → cp2(4,4), \ at (4,5) → DOWN col5 → cp3(5,5), \ at (6,5) → RIGHT → target(6,6)
+      // CoinA(0,2) on row0 approach; CoinB(3,3) on col3 descent — both on solution path.
+      { r: 0, c: 2, cell: coin(2) },
+      { r: 3, c: 3, cell: coin(3) },
     ]),
   };
 };
@@ -787,9 +812,11 @@ const level9 = (): LevelConfig => {
       { r: 4, c: 3, cell: checkpoint(2) },
       { r: 4, c: 1, cell: checkpoint(3) },
       { r: 7, c: 0, cell: target() },
-      { r: 5, c: 3, cell: coin(3) },
-      { r: 2, c: 2, cell: coin(2) },
-      { r: 6, c: 5, cell: coin(1) },
+      // Solution: / at (2,7) → LEFT row2 → (2,6[coinA]), / at (2,4) → DOWN col4 → cp1(3,4),
+      //   / at (4,4) → LEFT row4 → cp2(4,3)(4,2)cp3(4,1), / at (4,0) → DOWN col0 → (5,0[coinB])(6,0) → target(7,0)
+      // CoinA(2,6) on row2 leftward segment; CoinB(5,0) on col0 descent — both on solution path.
+      { r: 2, c: 6, cell: coin(2) },
+      { r: 5, c: 0, cell: coin(3) },
     ]),
   };
 };
@@ -954,8 +981,11 @@ const level10 = (): LevelConfig => {
       { r: 3, c: 4, cell: checkpoint(2) },
       { r: 4, c: 5, cell: checkpoint(3) },
       { r: 7, c: 7, cell: target() },
-      { r: 2, c: 4, cell: coin(3) },
-      { r: 5, c: 3, cell: coin(2) },
+      // Solution: \ at (0,2) → DOWN col2 → cp1(2,2), \ at (3,2) → RIGHT row3 → cp2(3,4),
+      //   \ at (3,5) → DOWN col5 → cp3(4,5), \ at (5,5) → RIGHT row5, \ at (5,7) → DOWN col7 → target(7,7)
+      // CoinA(1,2) on col2 descent; CoinB(3,3) on row3 rightward segment — both on solution path.
+      { r: 1, c: 2, cell: coin(2) },
+      { r: 3, c: 3, cell: coin(3) },
     ]),
   };
 };
