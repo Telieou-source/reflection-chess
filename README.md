@@ -4,6 +4,16 @@ A laser-and-mirrors puzzle game for iOS built with Expo and React Native. Guide 
 
 ---
 
+## App Store
+
+Available on the Apple App Store as **Reflection Chess**.
+
+[![Download on the App Store](https://developer.apple.com/assets/elements/badges/download-on-the-app-store.svg)](https://apps.apple.com/app/id6784699165)
+
+**Direct link:** https://apps.apple.com/app/id6784699165
+
+---
+
 ## Gameplay
 
 Place mirrors on the grid to redirect a laser beam through every checkpoint gate (in order) and into the target. The fewer mirrors you use, the more coins you earn.
