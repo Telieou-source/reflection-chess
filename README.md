@@ -122,3 +122,38 @@ Coins are earned through gameplay only — no real money involved.
 ---
 
 ## Project Structure
+
+```
+artifacts/reflection-chess/
+├── app/
+│   ├── (tabs)/index.tsx      # Home screen
+│   ├── levels.tsx            # Level select
+│   ├── game.tsx              # Game board screen
+│   ├── shop.tsx              # Coin shop (hints, cosmetics)
+│   └── how-to-play.tsx       # Rules / tutorial
+├── components/
+│   └── Board.tsx             # Board rendering and piece interaction
+├── context/
+│   ├── GameContext.tsx       # Progress, coins, save data
+│   └── CosmeticsContext.tsx  # Laser colors, board themes, music
+├── constants/
+│   └── levels.ts             # Handcrafted levels 1–10
+├── utils/
+│   ├── laser.ts              # Beam tracing (mirrors, splitters, tunnels)
+│   └── generate.ts           # Procedural level generator (11+)
+└── types/game.ts             # Shared game types
+```
+
+---
+
+## Getting Started
+
+```bash
+# Install dependencies
+pnpm install
+
+# Start the Expo dev server
+pnpm --filter @workspace/reflection-chess exec expo start
+```
+
+Then scan the QR code with the **Expo Go** app on your iPhone.
